@@ -1,0 +1,127 @@
+VERSION ""
+
+NS_ :
+
+BS_:
+
+BU_: ECU1 ECU2
+
+BO_ 256 EngineData: 8 ECU1
+ SG_ EngineSpeed : 0|16@1+ (0.25,0) [0|16383.75] "rpm" ECU2
+ SG_ EngineTemp : 16|8@1+ (1,-40) [-40|215] "degC" ECU2
+ SG_ ThrottlePos : 24|8@1+ (0.392157,0) [0|100] "%" ECU2
+ SG_ EngineRunning : 32|1@1+ (1,0) [0|1] "" ECU2
+
+BO_ 512 VehicleSpeed: 4 ECU1
+ SG_ Speed : 0|16@1+ (0.01,0) [0|655.35] "km/h" ECU2
+ SG_ Odometer : 16|16@1+ (1,0) [0|65535] "km" ECU2
+
+BO_ 768 BrakeData: 3 ECU1
+ SG_ BrakePedal : 0|8@1+ (0.392157,0) [0|100] "%" ECU2
+ SG_ BrakeActive : 8|1@1+ (1,0) [0|1] "" ECU2
+ SG_ ABSActive : 9|1@1+ (1,0) [0|1] "" ECU2
+ SG_ BrakeTemp : 10|10@1+ (0.5,0) [0|511.5] "degC" ECU2
+
+BO_ 1024 Lights: 2 ECU2
+ SG_ Headlights : 0|2@1+ (1,0) [0|3] "" ECU1
+ SG_ TurnSignal : 2|2@1+ (1,0) [0|3] "" ECU1
+ SG_ HazardLights : 4|1@1+ (1,0) [0|1] "" ECU1
+ SG_ HighBeam : 5|1@1+ (1,0) [0|1] "" ECU1
+
+BO_ 1280 BitMatrix: 8 ECU1
+ SG_ Bit00 : 0|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit01 : 1|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit02 : 2|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit03 : 3|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit04 : 4|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit05 : 5|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit06 : 6|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit07 : 7|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit08 : 8|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit09 : 9|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit10 : 10|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit11 : 11|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit12 : 12|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit13 : 13|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit14 : 14|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit15 : 15|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit16 : 16|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit17 : 17|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit18 : 18|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit19 : 19|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit20 : 20|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit21 : 21|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit22 : 22|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit23 : 23|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit24 : 24|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit25 : 25|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit26 : 26|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit27 : 27|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit28 : 28|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit29 : 29|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit30 : 30|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit31 : 31|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit32 : 32|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit33 : 33|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit34 : 34|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit35 : 35|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit36 : 36|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit37 : 37|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit38 : 38|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit39 : 39|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit40 : 40|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit41 : 41|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit42 : 42|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit43 : 43|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit44 : 44|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit45 : 45|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit46 : 46|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit47 : 47|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit48 : 48|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit49 : 49|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit50 : 50|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit51 : 51|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit52 : 52|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit53 : 53|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit54 : 54|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit55 : 55|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit56 : 56|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit57 : 57|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit58 : 58|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit59 : 59|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit60 : 60|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit61 : 61|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit62 : 62|1@1+ (1,0) [0|1] "" ECU2
+ SG_ Bit63 : 63|1@1+ (1,0) [0|1] "" ECU2
+
+CM_ BO_ 256 "Engine sensor data at 100ms cycle";
+CM_ BO_ 512 "Vehicle speed and odometer";
+CM_ BO_ 768 "Brake system status";
+CM_ BO_ 1024 "Lighting control";
+CM_ BO_ 1280 "64 x 1-bit signals for decode performance testing";
+CM_ SG_ 256 EngineSpeed "Engine crankshaft speed";
+CM_ SG_ 256 EngineTemp "Engine coolant temperature";
+CM_ SG_ 512 Speed "Vehicle ground speed";
+CM_ SG_ 768 BrakePedal "Brake pedal position percentage";
+
+BA_DEF_ BO_ "GenMsgCycleTime" INT 0 10000;
+BA_DEF_ SG_ "GenSigStartValue" FLOAT 0 100000;
+BA_ "GenMsgCycleTime" BO_ 256 100;
+BA_ "GenMsgCycleTime" BO_ 512 200;
+BA_ "GenMsgCycleTime" BO_ 768 50;
+BA_ "GenMsgCycleTime" BO_ 1024 500;
+BA_ "GenMsgCycleTime" BO_ 1280 1;
+BA_ "GenSigStartValue" SG_ 256 EngineSpeed 3200;
+BA_ "GenSigStartValue" SG_ 256 EngineTemp 130;
+BA_ "GenSigStartValue" SG_ 256 ThrottlePos 38;
+BA_ "GenSigStartValue" SG_ 256 EngineRunning 1;
+BA_ "GenSigStartValue" SG_ 512 Speed 6000;
+BA_ "GenSigStartValue" SG_ 512 Odometer 12345;
+BA_ "GenSigStartValue" SG_ 768 BrakePedal 0;
+BA_ "GenSigStartValue" SG_ 768 BrakeActive 0;
+BA_ "GenSigStartValue" SG_ 768 ABSActive 0;
+BA_ "GenSigStartValue" SG_ 768 BrakeTemp 50;
+BA_ "GenSigStartValue" SG_ 1024 Headlights 1;
+BA_ "GenSigStartValue" SG_ 1024 TurnSignal 0;
+BA_ "GenSigStartValue" SG_ 1024 HazardLights 0;
+BA_ "GenSigStartValue" SG_ 1024 HighBeam 0;

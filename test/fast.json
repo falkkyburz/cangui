@@ -1,0 +1,327 @@
+{
+  "name": "fast",
+  "database_files": [
+    "/home/falk/Work/cangui/test.dbc"
+  ],
+  "trace_files": [
+    "/home/falk/Work/cangui/trace/2026-02-13T21-37-09.trc",
+    "/home/falk/Work/cangui/trace/2026-02-13T21-39-45.trc",
+    "/home/falk/Work/cangui/trace/2026-02-13T21-45-53.trc",
+    "/home/falk/Work/cangui/trace/2026-02-13T21-48-50.trc",
+    "/home/falk/Work/cangui/trace/2026-02-13T21-50-57.trc"
+  ],
+  "watch_signals": [],
+  "tx_messages": [
+    {
+      "bus": 1,
+      "can_id": 768,
+      "is_extended_id": false,
+      "length": 3,
+      "symbol": "BrakeData",
+      "raw_data": "00c800",
+      "cycle_time_ms": 50,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 256,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "EngineData",
+      "raw_data": "800c822601000000",
+      "cycle_time_ms": 100,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1024,
+      "is_extended_id": false,
+      "length": 2,
+      "symbol": "Lights",
+      "raw_data": "0100",
+      "cycle_time_ms": 500,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 512,
+      "is_extended_id": false,
+      "length": 4,
+      "symbol": "VehicleSpeed",
+      "raw_data": "70173930",
+      "cycle_time_ms": 200,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 0,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 2,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 3,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 4,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 5,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 6,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 7,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 8,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 9,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 16,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 16,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 16,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 16,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 16,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 16,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 16,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 16,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 16,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 16,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    }
+  ],
+  "connections": [
+    {
+      "interface": "socketcan-virtual",
+      "channel": "vcan0",
+      "bitrate": 500000,
+      "fd": false,
+      "name": "",
+      "bus_number": 1
+    }
+  ],
+  "watch_dids": [],
+  "uds_config": {},
+  "rx_filters": [
+    {
+      "enabled": true,
+      "action": "Pass",
+      "id_from": 0,
+      "id_to": 2047,
+      "bus": 0,
+      "name": "Standard"
+    },
+    {
+      "enabled": true,
+      "action": "Pass",
+      "id_from": 2048,
+      "id_to": 536870911,
+      "bus": 0,
+      "name": "Extended"
+    }
+  ],
+  "workspace_state": "{\"h_splitter\": [920, 617], \"v_splitter\": [305, 702], \"rxtx_splitter\": [473, 307, 160], \"main_tabs\": {\"order\": [\"Receive/Transmit\", \"Trace\", \"Plot\", \"Diagnostics\"], \"current\": 0}, \"small_tabs\": {\"order\": [\"Project Manager\"], \"current\": 0}, \"list_tabs\": {\"order\": [\"Watch\", \"Watch DID\", \"DTC\", \"Rx Filter\", \"Help\"], \"current\": 0}}"
+}

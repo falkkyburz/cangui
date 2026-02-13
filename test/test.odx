@@ -1,0 +1,609 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<ODX MODEL-VERSION="2.2.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <DIAG-LAYER-CONTAINER ID="DLC_EngineECU">
+    <SHORT-NAME>EngineECU_Container</SHORT-NAME>
+    <LONG-NAME>Engine ECU Diagnostic Container</LONG-NAME>
+
+    <ECU-VARIANTS>
+      <ECU-VARIANT ID="EV_EngineECU">
+        <SHORT-NAME>EngineECU</SHORT-NAME>
+        <LONG-NAME>Engine Control Unit</LONG-NAME>
+
+        <DIAG-COMMS>
+          <!-- DiagnosticSessionControl (0x10) -->
+          <DIAG-SERVICE ID="DS_DiagSessionCtrl">
+            <SHORT-NAME>DiagnosticSessionControl</SHORT-NAME>
+            <LONG-NAME>Diagnostic Session Control</LONG-NAME>
+            <REQUEST-REF ID-REF="RQ_DiagSessionCtrl"/>
+            <POS-RESPONSE-REFS>
+              <POS-RESPONSE-REF ID-REF="PR_DiagSessionCtrl"/>
+            </POS-RESPONSE-REFS>
+          </DIAG-SERVICE>
+
+          <!-- TesterPresent (0x3E) -->
+          <DIAG-SERVICE ID="DS_TesterPresent">
+            <SHORT-NAME>TesterPresent</SHORT-NAME>
+            <LONG-NAME>Tester Present</LONG-NAME>
+            <REQUEST-REF ID-REF="RQ_TesterPresent"/>
+            <POS-RESPONSE-REFS>
+              <POS-RESPONSE-REF ID-REF="PR_TesterPresent"/>
+            </POS-RESPONSE-REFS>
+          </DIAG-SERVICE>
+
+          <!-- ClearDiagnosticInformation (0x14) -->
+          <DIAG-SERVICE ID="DS_ClearDTC">
+            <SHORT-NAME>ClearDiagnosticInformation</SHORT-NAME>
+            <LONG-NAME>Clear Diagnostic Information</LONG-NAME>
+            <REQUEST-REF ID-REF="RQ_ClearDTC"/>
+            <POS-RESPONSE-REFS>
+              <POS-RESPONSE-REF ID-REF="PR_ClearDTC"/>
+            </POS-RESPONSE-REFS>
+          </DIAG-SERVICE>
+
+          <!-- ReadDataByIdentifier: VIN (0xF190) -->
+          <DIAG-SERVICE ID="DS_ReadVIN">
+            <SHORT-NAME>Read_VIN</SHORT-NAME>
+            <LONG-NAME>Read Vehicle Identification Number</LONG-NAME>
+            <REQUEST-REF ID-REF="RQ_ReadVIN"/>
+            <POS-RESPONSE-REFS>
+              <POS-RESPONSE-REF ID-REF="PR_ReadVIN"/>
+            </POS-RESPONSE-REFS>
+          </DIAG-SERVICE>
+
+          <!-- ReadDataByIdentifier: ECU Serial Number (0xF18C) -->
+          <DIAG-SERVICE ID="DS_ReadSerialNumber">
+            <SHORT-NAME>Read_ECU_SerialNumber</SHORT-NAME>
+            <LONG-NAME>Read ECU Serial Number</LONG-NAME>
+            <REQUEST-REF ID-REF="RQ_ReadSerialNumber"/>
+            <POS-RESPONSE-REFS>
+              <POS-RESPONSE-REF ID-REF="PR_ReadSerialNumber"/>
+            </POS-RESPONSE-REFS>
+          </DIAG-SERVICE>
+
+          <!-- ReadDataByIdentifier: Software Version (0xF189) -->
+          <DIAG-SERVICE ID="DS_ReadSWVersion">
+            <SHORT-NAME>Read_SoftwareVersion</SHORT-NAME>
+            <LONG-NAME>Read ECU Software Version</LONG-NAME>
+            <REQUEST-REF ID-REF="RQ_ReadSWVersion"/>
+            <POS-RESPONSE-REFS>
+              <POS-RESPONSE-REF ID-REF="PR_ReadSWVersion"/>
+            </POS-RESPONSE-REFS>
+          </DIAG-SERVICE>
+
+          <!-- ReadDataByIdentifier: Hardware Number (0xF191) -->
+          <DIAG-SERVICE ID="DS_ReadHWNumber">
+            <SHORT-NAME>Read_HardwareNumber</SHORT-NAME>
+            <LONG-NAME>Read ECU Hardware Number</LONG-NAME>
+            <REQUEST-REF ID-REF="RQ_ReadHWNumber"/>
+            <POS-RESPONSE-REFS>
+              <POS-RESPONSE-REF ID-REF="PR_ReadHWNumber"/>
+            </POS-RESPONSE-REFS>
+          </DIAG-SERVICE>
+
+          <!-- ReadDataByIdentifier: Supplier SW Version (0xF195) -->
+          <DIAG-SERVICE ID="DS_ReadSupplierSWVersion">
+            <SHORT-NAME>Read_SupplierSWVersion</SHORT-NAME>
+            <LONG-NAME>Read System Supplier ECU Software Version Number</LONG-NAME>
+            <REQUEST-REF ID-REF="RQ_ReadSupplierSWVersion"/>
+            <POS-RESPONSE-REFS>
+              <POS-RESPONSE-REF ID-REF="PR_ReadSupplierSWVersion"/>
+            </POS-RESPONSE-REFS>
+          </DIAG-SERVICE>
+
+          <!-- ReadDataByIdentifier: Engine RPM (0x0100) -->
+          <DIAG-SERVICE ID="DS_ReadEngineRPM">
+            <SHORT-NAME>Read_EngineRPM</SHORT-NAME>
+            <LONG-NAME>Read Engine RPM</LONG-NAME>
+            <REQUEST-REF ID-REF="RQ_ReadEngineRPM"/>
+            <POS-RESPONSE-REFS>
+              <POS-RESPONSE-REF ID-REF="PR_ReadEngineRPM"/>
+            </POS-RESPONSE-REFS>
+          </DIAG-SERVICE>
+
+          <!-- ReadDataByIdentifier: Vehicle Speed (0x0101) -->
+          <DIAG-SERVICE ID="DS_ReadVehicleSpeed">
+            <SHORT-NAME>Read_VehicleSpeed</SHORT-NAME>
+            <LONG-NAME>Read Vehicle Speed</LONG-NAME>
+            <REQUEST-REF ID-REF="RQ_ReadVehicleSpeed"/>
+            <POS-RESPONSE-REFS>
+              <POS-RESPONSE-REF ID-REF="PR_ReadVehicleSpeed"/>
+            </POS-RESPONSE-REFS>
+          </DIAG-SERVICE>
+
+          <!-- ReadDataByIdentifier: Coolant Temperature (0x0102) -->
+          <DIAG-SERVICE ID="DS_ReadCoolantTemp">
+            <SHORT-NAME>Read_CoolantTemperature</SHORT-NAME>
+            <LONG-NAME>Read Engine Coolant Temperature</LONG-NAME>
+            <REQUEST-REF ID-REF="RQ_ReadCoolantTemp"/>
+            <POS-RESPONSE-REFS>
+              <POS-RESPONSE-REF ID-REF="PR_ReadCoolantTemp"/>
+            </POS-RESPONSE-REFS>
+          </DIAG-SERVICE>
+        </DIAG-COMMS>
+
+        <REQUESTS>
+          <!-- DiagnosticSessionControl request: 10 xx -->
+          <REQUEST ID="RQ_DiagSessionCtrl">
+            <SHORT-NAME>RQ_DiagSessionCtrl</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x10</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM SEMANTIC="SUBFUNCTION" xsi:type="CODED-CONST">
+                <SHORT-NAME>SessionType</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <CODED-VALUE>0x03</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+            </PARAMS>
+          </REQUEST>
+
+          <!-- TesterPresent request: 3E 00 -->
+          <REQUEST ID="RQ_TesterPresent">
+            <SHORT-NAME>RQ_TesterPresent</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x3E</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM SEMANTIC="SUBFUNCTION" xsi:type="CODED-CONST">
+                <SHORT-NAME>SubFunction</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <CODED-VALUE>0x00</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+            </PARAMS>
+          </REQUEST>
+
+          <!-- ClearDiagnosticInformation request: 14 FF FF FF -->
+          <REQUEST ID="RQ_ClearDTC">
+            <SHORT-NAME>RQ_ClearDTC</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x14</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="CODED-CONST">
+                <SHORT-NAME>GroupOfDTC</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <CODED-VALUE>0xFFFFFF</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>24</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+            </PARAMS>
+          </REQUEST>
+
+          <!-- RDBI VIN: 22 F1 90 -->
+          <REQUEST ID="RQ_ReadVIN">
+            <SHORT-NAME>RQ_ReadVIN</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x22</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="CODED-CONST">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <CODED-VALUE>0xF190</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>16</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+            </PARAMS>
+          </REQUEST>
+
+          <!-- RDBI ECU Serial Number: 22 F1 8C -->
+          <REQUEST ID="RQ_ReadSerialNumber">
+            <SHORT-NAME>RQ_ReadSerialNumber</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x22</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="CODED-CONST">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <CODED-VALUE>0xF18C</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>16</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+            </PARAMS>
+          </REQUEST>
+
+          <!-- RDBI Software Version: 22 F1 89 -->
+          <REQUEST ID="RQ_ReadSWVersion">
+            <SHORT-NAME>RQ_ReadSWVersion</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x22</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="CODED-CONST">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <CODED-VALUE>0xF189</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>16</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+            </PARAMS>
+          </REQUEST>
+
+          <!-- RDBI Hardware Number: 22 F1 91 -->
+          <REQUEST ID="RQ_ReadHWNumber">
+            <SHORT-NAME>RQ_ReadHWNumber</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x22</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="CODED-CONST">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <CODED-VALUE>0xF191</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>16</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+            </PARAMS>
+          </REQUEST>
+
+          <!-- RDBI Supplier SW Version: 22 F1 95 -->
+          <REQUEST ID="RQ_ReadSupplierSWVersion">
+            <SHORT-NAME>RQ_ReadSupplierSWVersion</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x22</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="CODED-CONST">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <CODED-VALUE>0xF195</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>16</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+            </PARAMS>
+          </REQUEST>
+
+          <!-- RDBI Engine RPM: 22 01 00 -->
+          <REQUEST ID="RQ_ReadEngineRPM">
+            <SHORT-NAME>RQ_ReadEngineRPM</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x22</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="CODED-CONST">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <CODED-VALUE>0x0100</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>16</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+            </PARAMS>
+          </REQUEST>
+
+          <!-- RDBI Vehicle Speed: 22 01 01 -->
+          <REQUEST ID="RQ_ReadVehicleSpeed">
+            <SHORT-NAME>RQ_ReadVehicleSpeed</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x22</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="CODED-CONST">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <CODED-VALUE>0x0101</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>16</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+            </PARAMS>
+          </REQUEST>
+
+          <!-- RDBI Coolant Temperature: 22 01 02 -->
+          <REQUEST ID="RQ_ReadCoolantTemp">
+            <SHORT-NAME>RQ_ReadCoolantTemp</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x22</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="CODED-CONST">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <CODED-VALUE>0x0102</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>16</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+            </PARAMS>
+          </REQUEST>
+        </REQUESTS>
+
+        <POS-RESPONSES>
+          <!-- DiagnosticSessionControl response: 50 xx ... -->
+          <POS-RESPONSE ID="PR_DiagSessionCtrl">
+            <SHORT-NAME>PR_DiagSessionCtrl</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x50</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="MATCHING-REQUEST-PARAM">
+                <SHORT-NAME>SessionType</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <REQUEST-BYTE-POS>1</REQUEST-BYTE-POS>
+                <BYTE-LENGTH>1</BYTE-LENGTH>
+              </PARAM>
+            </PARAMS>
+          </POS-RESPONSE>
+
+          <!-- TesterPresent response: 7E 00 -->
+          <POS-RESPONSE ID="PR_TesterPresent">
+            <SHORT-NAME>PR_TesterPresent</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x7E</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="MATCHING-REQUEST-PARAM">
+                <SHORT-NAME>SubFunction</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <REQUEST-BYTE-POS>1</REQUEST-BYTE-POS>
+                <BYTE-LENGTH>1</BYTE-LENGTH>
+              </PARAM>
+            </PARAMS>
+          </POS-RESPONSE>
+
+          <!-- ClearDiagnosticInformation response: 54 -->
+          <POS-RESPONSE ID="PR_ClearDTC">
+            <SHORT-NAME>PR_ClearDTC</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x54</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+            </PARAMS>
+          </POS-RESPONSE>
+
+          <!-- RDBI VIN response: 62 F1 90 ... -->
+          <POS-RESPONSE ID="PR_ReadVIN">
+            <SHORT-NAME>PR_ReadVIN</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x62</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="MATCHING-REQUEST-PARAM">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <REQUEST-BYTE-POS>1</REQUEST-BYTE-POS>
+                <BYTE-LENGTH>2</BYTE-LENGTH>
+              </PARAM>
+            </PARAMS>
+          </POS-RESPONSE>
+
+          <!-- RDBI ECU Serial Number response: 62 F1 8C ... -->
+          <POS-RESPONSE ID="PR_ReadSerialNumber">
+            <SHORT-NAME>PR_ReadSerialNumber</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x62</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="MATCHING-REQUEST-PARAM">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <REQUEST-BYTE-POS>1</REQUEST-BYTE-POS>
+                <BYTE-LENGTH>2</BYTE-LENGTH>
+              </PARAM>
+            </PARAMS>
+          </POS-RESPONSE>
+
+          <!-- RDBI Software Version response: 62 F1 89 ... -->
+          <POS-RESPONSE ID="PR_ReadSWVersion">
+            <SHORT-NAME>PR_ReadSWVersion</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x62</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="MATCHING-REQUEST-PARAM">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <REQUEST-BYTE-POS>1</REQUEST-BYTE-POS>
+                <BYTE-LENGTH>2</BYTE-LENGTH>
+              </PARAM>
+            </PARAMS>
+          </POS-RESPONSE>
+
+          <!-- RDBI Hardware Number response: 62 F1 91 ... -->
+          <POS-RESPONSE ID="PR_ReadHWNumber">
+            <SHORT-NAME>PR_ReadHWNumber</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x62</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="MATCHING-REQUEST-PARAM">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <REQUEST-BYTE-POS>1</REQUEST-BYTE-POS>
+                <BYTE-LENGTH>2</BYTE-LENGTH>
+              </PARAM>
+            </PARAMS>
+          </POS-RESPONSE>
+
+          <!-- RDBI Supplier SW Version response: 62 F1 95 ... -->
+          <POS-RESPONSE ID="PR_ReadSupplierSWVersion">
+            <SHORT-NAME>PR_ReadSupplierSWVersion</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x62</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="MATCHING-REQUEST-PARAM">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <REQUEST-BYTE-POS>1</REQUEST-BYTE-POS>
+                <BYTE-LENGTH>2</BYTE-LENGTH>
+              </PARAM>
+            </PARAMS>
+          </POS-RESPONSE>
+
+          <!-- RDBI Engine RPM response: 62 01 00 ... -->
+          <POS-RESPONSE ID="PR_ReadEngineRPM">
+            <SHORT-NAME>PR_ReadEngineRPM</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x62</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="MATCHING-REQUEST-PARAM">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <REQUEST-BYTE-POS>1</REQUEST-BYTE-POS>
+                <BYTE-LENGTH>2</BYTE-LENGTH>
+              </PARAM>
+            </PARAMS>
+          </POS-RESPONSE>
+
+          <!-- RDBI Vehicle Speed response: 62 01 01 ... -->
+          <POS-RESPONSE ID="PR_ReadVehicleSpeed">
+            <SHORT-NAME>PR_ReadVehicleSpeed</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x62</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="MATCHING-REQUEST-PARAM">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <REQUEST-BYTE-POS>1</REQUEST-BYTE-POS>
+                <BYTE-LENGTH>2</BYTE-LENGTH>
+              </PARAM>
+            </PARAMS>
+          </POS-RESPONSE>
+
+          <!-- RDBI Coolant Temperature response: 62 01 02 ... -->
+          <POS-RESPONSE ID="PR_ReadCoolantTemp">
+            <SHORT-NAME>PR_ReadCoolantTemp</SHORT-NAME>
+            <PARAMS>
+              <PARAM SEMANTIC="SERVICE-ID" xsi:type="CODED-CONST">
+                <SHORT-NAME>ServiceId</SHORT-NAME>
+                <BYTE-POSITION>0</BYTE-POSITION>
+                <CODED-VALUE>0x62</CODED-VALUE>
+                <DIAG-CODED-TYPE xsi:type="STANDARD-LENGTH-TYPE" BASE-DATA-TYPE="A_UINT32" IS-HIGHLOW-BYTE-ORDER="true">
+                  <BIT-LENGTH>8</BIT-LENGTH>
+                </DIAG-CODED-TYPE>
+              </PARAM>
+              <PARAM xsi:type="MATCHING-REQUEST-PARAM">
+                <SHORT-NAME>DataIdentifier</SHORT-NAME>
+                <BYTE-POSITION>1</BYTE-POSITION>
+                <REQUEST-BYTE-POS>1</REQUEST-BYTE-POS>
+                <BYTE-LENGTH>2</BYTE-LENGTH>
+              </PARAM>
+            </PARAMS>
+          </POS-RESPONSE>
+        </POS-RESPONSES>
+
+      </ECU-VARIANT>
+    </ECU-VARIANTS>
+  </DIAG-LAYER-CONTAINER>
+</ODX>
