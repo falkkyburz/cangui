@@ -8,7 +8,7 @@ if os.environ.get("XDG_SESSION_TYPE") == "wayland":
 
 from PySide6.QtWidgets import QApplication
 
-from cangui.ui.main_window import MainWindow
+from cangui.ui_main_window import MainWindow
 
 
 def run():

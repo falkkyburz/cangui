@@ -1,0 +1,67 @@
+{
+  "name": "slow",
+  "database_files": [],
+  "trace_files": [],
+  "watch_signals": [],
+  "tx_messages": [
+    {
+      "bus": 1,
+      "can_id": 0,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 100,
+      "cycle_enabled": true
+    }
+  ],
+  "connections": [
+    {
+      "interface": "socketcan-virtual",
+      "channel": "vcan0",
+      "bitrate": 500000,
+      "fd": false,
+      "name": "",
+      "bus_number": 1
+    }
+  ],
+  "watch_dids": [],
+  "uds_config": {},
+  "rx_filters": [
+    {
+      "enabled": true,
+      "action": "Pass",
+      "id_from": 0,
+      "id_to": 2047,
+      "bus": 0,
+      "name": "Standard"
+    },
+    {
+      "enabled": true,
+      "action": "Pass",
+      "id_from": 2048,
+      "id_to": 536870911,
+      "bus": 0,
+      "name": "Extended"
+    }
+  ],
+  "workspace_state": "{\"h_splitter\": [860, 577], \"v_splitter\": [308, 718], \"rxtx_splitter\": [480, 316, 163], \"main_tabs\": {\"order\": [\"Receive/Transmit [1]\", \"Trace [2]\", \"Plot [3]\", \"Diagnostics [4]\"], \"current\": 0}, \"small_tabs\": {\"order\": [\"Project Manager [5]\"], \"current\": 0}, \"list_tabs\": {\"order\": [\"Watch [6]\", \"Watch DID [7]\", \"DTC [8]\", \"Rx Filter [9]\", \"Plot List [B]\", \"Settings [A]\", \"Help [0]\"], \"current\": 0}}",
+  "settings": {
+    "general": {
+      "float_format": "f",
+      "decimal_places": 3,
+      "timestamp_format": "relative"
+    },
+    "tracer": {
+      "buffer_size": 100000,
+      "auto_scroll": true,
+      "trace_format": "trc"
+    },
+    "plot": {
+      "time_window": 10.0,
+      "max_display_points": 5000,
+      "update_interval_ms": 50
+    }
+  },
+  "plot_files": []
+}
