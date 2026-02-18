@@ -20,7 +20,7 @@ class WatchEntry:
         return self.display_name or self.signal_name
 
 
-COLUMNS = ["Name", "Value", "Direction"]
+COLUMNS = ["Name", "Value", "Direction", "Origin"]
 
 
 class WatchModel(QAbstractTableModel):
@@ -64,6 +64,11 @@ class WatchModel(QAbstractTableModel):
                     return f"{entry.value} {entry.unit}"
                 return entry.value
             case 2: return entry.direction
+            case 3:
+                msg_name = self._decoder.get_symbol(entry.arb_id) if self._decoder else ""
+                if msg_name:
+                    return f"{msg_name}.{entry.signal_name}"
+                return entry.signal_name
         return None
 
     def flags(self, index: QModelIndex):
@@ -93,6 +98,22 @@ class WatchModel(QAbstractTableModel):
             self._entries.pop(row)
             self._rebuild_index()
             self.endRemoveRows()
+
+    def move_up(self, row: int):
+        if row <= 0 or row >= len(self._entries):
+            return
+        self.beginMoveRows(QModelIndex(), row, row, QModelIndex(), row - 1)
+        self._entries.insert(row - 1, self._entries.pop(row))
+        self._rebuild_index()
+        self.endMoveRows()
+
+    def move_down(self, row: int):
+        if row < 0 or row >= len(self._entries) - 1:
+            return
+        self.beginMoveRows(QModelIndex(), row, row, QModelIndex(), row + 2)
+        self._entries.insert(row + 1, self._entries.pop(row))
+        self._rebuild_index()
+        self.endMoveRows()
 
     def on_message(self, msg: CanMessage):
         """Queue a single message for processing."""

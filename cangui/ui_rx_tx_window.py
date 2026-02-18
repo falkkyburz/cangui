@@ -72,8 +72,12 @@ class SymbolDelegate(QStyledItemDelegate):
     def setModelData(self, editor, model, index):
         model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
 
-# Column widths: Bus, ID, Ext, Type, Length, Symbol, Data, ...
+# RX/TX column widths: Bus, ID(hex), Ext, Type, Length, Symbol, Data(hex), ...
 _DEFAULT_WIDTHS = [40, 80, 35, 50, 50, 120, 200, 80, 60, 60, 60]
+
+# Connection table: (empty/checkbox), Bus, Name, Channel, Interface, Bit Rate,
+#                   Status, Overruns, QXmtFulls, Options  (Bus Load stretches)
+_DEFAULT_CONN_WIDTHS = [28, 38, 80, 110, 120, 80, 60, 68, 68, 48]
 
 
 class RxTxWindow(BaseDockWindow):
@@ -171,6 +175,18 @@ class RxTxWindow(BaseDockWindow):
         clear_counters_action.triggered.connect(self._clear_tx_counters)
         tx_toolbar.addAction(clear_counters_action)
 
+        tx_toolbar.addSeparator()
+
+        up_tx_action = QAction(_icon("up"), "Move Up", self)
+        up_tx_action.triggered.connect(self._move_tx_up)
+        tx_toolbar.addAction(up_tx_action)
+
+        down_tx_action = QAction(_icon("down"), "Move Down", self)
+        down_tx_action.triggered.connect(self._move_tx_down)
+        tx_toolbar.addAction(down_tx_action)
+
+        tx_toolbar.addSeparator()
+
         add_tx_watch_action = QAction(_icon("watch"), "Add to Watch", self)
         add_tx_watch_action.triggered.connect(self._add_tx_to_watch)
         tx_toolbar.addAction(add_tx_watch_action)
@@ -228,6 +244,7 @@ class RxTxWindow(BaseDockWindow):
         self._conn_view.setItemDelegateForColumn(4, InterfaceDelegate(self._conn_view))
         self._conn_view.header().setStretchLastSection(True)
         self._conn_view.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self._set_default_widths(self._conn_view, _DEFAULT_CONN_WIDTHS)
         conn_layout.addWidget(self._conn_view)
         self._splitter.addWidget(conn_container)
 
@@ -256,9 +273,9 @@ class RxTxWindow(BaseDockWindow):
         return self._rx_view
 
     @staticmethod
-    def _set_default_widths(view: QTreeView):
+    def _set_default_widths(view: QTreeView, widths: list[int] = _DEFAULT_WIDTHS):
         header = view.header()
-        for i, width in enumerate(_DEFAULT_WIDTHS):
+        for i, width in enumerate(widths):
             if i < header.count():
                 header.resizeSection(i, width)
 
@@ -307,6 +324,22 @@ class RxTxWindow(BaseDockWindow):
 
     def _clear_tx_counters(self):
         self._tx_model.clear_counts()
+
+    def _move_tx_up(self):
+        index = self._tx_view.currentIndex()
+        if not index.isValid():
+            return
+        row = index.parent().row() if index.parent().isValid() else index.row()
+        self._tx_model.move_up(row)
+        self._tx_view.setCurrentIndex(self._tx_model.index(row - 1, 0))
+
+    def _move_tx_down(self):
+        index = self._tx_view.currentIndex()
+        if not index.isValid():
+            return
+        row = index.parent().row() if index.parent().isValid() else index.row()
+        self._tx_model.move_down(row)
+        self._tx_view.setCurrentIndex(self._tx_model.index(row + 1, 0))
 
     def _duplicate_tx(self):
         index = self._tx_view.currentIndex()

@@ -30,6 +30,16 @@ class WatchWindow(BaseDockWindow):
 
         toolbar.addSeparator()
 
+        up_action = QAction(_icon("up"), "Move Up", self)
+        up_action.triggered.connect(self._on_move_up)
+        toolbar.addAction(up_action)
+
+        down_action = QAction(_icon("down"), "Move Down", self)
+        down_action.triggered.connect(self._on_move_down)
+        toolbar.addAction(down_action)
+
+        toolbar.addSeparator()
+
         add_to_plot_action = QAction(_icon("plot"), "Add to Plot", self)
         add_to_plot_action.triggered.connect(self._on_add_to_plot)
         toolbar.addAction(add_to_plot_action)
@@ -53,6 +63,22 @@ class WatchWindow(BaseDockWindow):
         index = self._view.currentIndex()
         if index.isValid():
             self._model.remove_watch(index.row())
+
+    def _on_move_up(self):
+        index = self._view.currentIndex()
+        if not index.isValid():
+            return
+        row = index.row()
+        self._model.move_up(row)
+        self._view.setCurrentIndex(self._model.index(row - 1, 0))
+
+    def _on_move_down(self):
+        index = self._view.currentIndex()
+        if not index.isValid():
+            return
+        row = index.row()
+        self._model.move_down(row)
+        self._view.setCurrentIndex(self._model.index(row + 1, 0))
 
     def _on_add_to_plot(self):
         index = self._view.currentIndex()

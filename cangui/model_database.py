@@ -533,6 +533,17 @@ class DatabaseModel(QAbstractItemModel):
         file_row, msg_row = _decode_id(index.internalId())
         return file_row, msg_row
 
+    def get_message(self, index: QModelIndex) -> "DbMessageItem | None":
+        """Return the message if index is a message-level row."""
+        if not index.isValid() or self._get_level(index) != 1:
+            return None
+        file_row, _ = _decode_id(index.internalId())
+        if 0 <= file_row < len(self._items):
+            msgs = self._items[file_row].messages
+            if 0 <= index.row() < len(msgs):
+                return msgs[index.row()]
+        return None
+
     def get_signal(self, index: QModelIndex) -> tuple[DbMessageItem, DbSignalItem] | None:
         """Return (message, signal) if index is a signal child row."""
         if not index.isValid() or self._get_level(index) != 2:

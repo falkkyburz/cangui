@@ -77,6 +77,20 @@ class DidWatchModel(QAbstractTableModel):
             self._entries.pop(row)
             self.endRemoveRows()
 
+    def move_up(self, row: int):
+        if row <= 0 or row >= len(self._entries):
+            return
+        self.beginMoveRows(QModelIndex(), row, row, QModelIndex(), row - 1)
+        self._entries.insert(row - 1, self._entries.pop(row))
+        self.endMoveRows()
+
+    def move_down(self, row: int):
+        if row < 0 or row >= len(self._entries) - 1:
+            return
+        self.beginMoveRows(QModelIndex(), row, row, QModelIndex(), row + 2)
+        self._entries.insert(row + 1, self._entries.pop(row))
+        self.endMoveRows()
+
     def update_value(self, did: int, data: bytes):
         for i, entry in enumerate(self._entries):
             if entry.did == did:
@@ -152,6 +166,16 @@ class WatchDidWindow(QWidget):
 
         toolbar.addSeparator()
 
+        up_action = QAction(_icon("up"), "Move Up", self)
+        up_action.triggered.connect(self._on_move_up)
+        toolbar.addAction(up_action)
+
+        down_action = QAction(_icon("down"), "Move Down", self)
+        down_action.triggered.connect(self._on_move_down)
+        toolbar.addAction(down_action)
+
+        toolbar.addSeparator()
+
         add_to_plot_action = QAction(_icon("plot"), "Add to Plot", self)
         add_to_plot_action.triggered.connect(self._on_add_to_plot)
         toolbar.addAction(add_to_plot_action)
@@ -223,6 +247,22 @@ class WatchDidWindow(QWidget):
         index = self._table.currentIndex()
         if index.isValid():
             self._model.remove_entry(index.row())
+
+    def _on_move_up(self):
+        index = self._table.currentIndex()
+        if not index.isValid():
+            return
+        row = index.row()
+        self._model.move_up(row)
+        self._table.setCurrentIndex(self._model.index(row - 1, 0))
+
+    def _on_move_down(self):
+        index = self._table.currentIndex()
+        if not index.isValid():
+            return
+        row = index.row()
+        self._model.move_down(row)
+        self._table.setCurrentIndex(self._model.index(row + 1, 0))
 
     def _on_clear(self):
         self._on_stop()

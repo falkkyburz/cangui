@@ -451,6 +451,20 @@ class TxMessageModel(QAbstractItemModel):
             self._items.pop(row)
             self.endRemoveRows()
 
+    def move_up(self, row: int):
+        if row <= 0 or row >= len(self._items):
+            return
+        self.beginMoveRows(QModelIndex(), row, row, QModelIndex(), row - 1)
+        self._items.insert(row - 1, self._items.pop(row))
+        self.endMoveRows()
+
+    def move_down(self, row: int):
+        if row < 0 or row >= len(self._items) - 1:
+            return
+        self.beginMoveRows(QModelIndex(), row, row, QModelIndex(), row + 2)
+        self._items.insert(row + 1, self._items.pop(row))
+        self.endMoveRows()
+
     def get_item(self, row: int) -> TxMessageItem | None:
         if 0 <= row < len(self._items):
             return self._items[row]

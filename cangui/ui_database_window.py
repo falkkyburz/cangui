@@ -14,6 +14,26 @@ from cangui.model_database import DatabaseModel, COL_BYTE_ORDER
 from cangui.ui_tab_navigation import TabTreeView
 from cangui.icons import icon as _icon
 
+# Widths for columns 1-15 of the database tree (col 0 = Name, sized dynamically;
+# col 16 = Comment, stretches as last section).
+_DB_COL_WIDTHS = {
+    1:  50,   # Bus
+    2:  80,   # ID (hex)
+    3:  45,   # DLC
+    4:  72,   # Cycle (ms)
+    5:  65,   # Start Bit
+    6:  72,   # Bit Length
+    7: 105,   # Byte Order  ("little_endian" is wide)
+    8:  58,   # Signed
+    9:  65,   # Factor
+    10: 65,   # Offset
+    11: 65,   # Min
+    12: 65,   # Max
+    13: 60,   # Unit
+    14: 50,   # Mux
+    15: 90,   # Values
+}
+
 
 class ByteOrderDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
@@ -120,6 +140,17 @@ class DatabaseWindow(QWidget):
 
         layout.addWidget(self._tree)
 
+    def _resize_columns(self):
+        """Resize columns to sensible widths after data is loaded."""
+        header = self._tree.header()
+        # Name column: fit to visible content, minimum 150 px
+        self._tree.resizeColumnToContents(0)
+        if header.sectionSize(0) < 150:
+            header.resizeSection(0, 150)
+        # Fixed widths for all data columns
+        for col, width in _DB_COL_WIDTHS.items():
+            header.resizeSection(col, width)
+
     @property
     def primary_view(self):
         return self._tree
@@ -224,23 +255,37 @@ class DatabaseWindow(QWidget):
 
     def _on_add_to_watch(self):
         index = self._tree.currentIndex()
+        # Signal selected → add that one signal
         result = self._model.get_signal(index)
-        if result is None:
-            QMessageBox.information(self, "Add to Watch",
-                                    "Select a signal within a message.")
+        if result is not None:
+            msg, sig = result
+            self.add_to_watch_requested.emit(msg.can_id, sig.name, sig.unit, "Db")
             return
-        msg, sig = result
-        self.add_to_watch_requested.emit(msg.can_id, sig.name, sig.unit, "Db")
+        # Message selected → add all signals in the message
+        msg = self._model.get_message(index)
+        if msg is not None:
+            for sig in msg.signals:
+                self.add_to_watch_requested.emit(msg.can_id, sig.name, sig.unit, "Db")
+            return
+        QMessageBox.information(self, "Add to Watch",
+                                "Select a message or signal.")
 
     def _on_add_to_plot(self):
         index = self._tree.currentIndex()
+        # Signal selected → add that one signal
         result = self._model.get_signal(index)
-        if result is None:
-            QMessageBox.information(self, "Add to Plot",
-                                    "Select a signal within a message.")
+        if result is not None:
+            msg, sig = result
+            self.add_to_plot_requested.emit(msg.can_id, sig.name, sig.unit)
             return
-        msg, sig = result
-        self.add_to_plot_requested.emit(msg.can_id, sig.name, sig.unit)
+        # Message selected → add all signals in the message
+        msg = self._model.get_message(index)
+        if msg is not None:
+            for sig in msg.signals:
+                self.add_to_plot_requested.emit(msg.can_id, sig.name, sig.unit)
+            return
+        QMessageBox.information(self, "Add to Plot",
+                                "Select a message or signal.")
 
     # -- DBC import/export --
 
@@ -250,6 +295,7 @@ class DatabaseWindow(QWidget):
         filename = Path(path).name
         self._model.import_from_cantools(db, filename=filename,
                                          source_path=path, append=True)
+        self._resize_columns()
         self.dbc_imported.emit(path)
 
     def import_dbc_silent(self, path: str):
@@ -259,6 +305,7 @@ class DatabaseWindow(QWidget):
         filename = Path(path).name
         self._model.import_from_cantools(db, filename=filename,
                                          source_path=path, append=True)
+        self._resize_columns()
 
     def remove_dbc(self, path: str):
         """Remove the file-level database entry matching path."""
@@ -279,7 +326,9 @@ class DatabaseWindow(QWidget):
 
     def from_dict(self, data: list[dict]):
         self._model.from_dict(data)
+        self._resize_columns()
 
     def append_from_dict(self, data: list[dict]):
         """Append file entries from dict without clearing existing data."""
         self._model.append_from_dict(data)
+        self._resize_columns()
