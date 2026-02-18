@@ -46,11 +46,19 @@ class ProjectModel(QAbstractItemModel):
         self._root.add_child(proj_node)
 
         # Database files
-        if self._project.data.database_files:
+        has_db_editor = (self._project.data.database_editor_file
+                         and self._project.path)
+        if self._project.data.database_files or has_db_editor:
             db_group = ProjectNode("Databases")
             proj_node.add_child(db_group)
             for f in self._project.data.database_files:
                 db_group.add_child(ProjectNode(Path(f).name, path=f))
+            if has_db_editor:
+                db_editor_path = str(self._project.path.parent
+                                     / self._project.data.database_editor_file)
+                db_group.add_child(
+                    ProjectNode(self._project.data.database_editor_file,
+                                path=db_editor_path))
 
         # Trace files
         if self._project.data.trace_files:

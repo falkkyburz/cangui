@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QSplitter, QTabWidget, QApplication,
 )
 from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from cangui.can_bus import BusConfig
 from cangui.can_message import CanMessage
@@ -37,7 +37,7 @@ from cangui.ui_dtc_window import DtcWindow
 from cangui.ui_help_window import HelpWindow
 from cangui.ui_settings_window import SettingsWindow
 from cangui.ui_plot_list_window import PlotListWindow
-from cangui.dialog_import_dbc import get_dbc_file_path
+from cangui.ui_database_window import DatabaseWindow
 from cangui.ui_focus_manager import FocusManager
 from cangui.service_workspace import WorkspaceService
 from cangui.worker_can_transmitter import CanTransmitter
@@ -77,7 +77,7 @@ class MainWindow(QMainWindow):
         self._tx_model = TxMessageModel(self)
         self._tx_model.set_decoder(self._decoder)
         self._watch_model = WatchModel(self._decoder, self)
-        self._trace_model = TraceModel(self._decoder, self)
+        self._trace_model = TraceModel(self)
         self._trace_model.set_trace_format(self._options.tracer.trace_format)
         self._project_model = ProjectModel(self._project, self)
 
@@ -112,6 +112,7 @@ class MainWindow(QMainWindow):
         self._focus.register("2", self._trace_win, self._main_tabs, "Trace")
         self._focus.register("3", self._plot_win, self._main_tabs, "Plot")
         self._focus.register("4", self._diag_win, self._main_tabs, "Diagnostics")
+        self._focus.register("D", self._database_win, self._main_tabs, "Database")
         self._focus.register("5", self._project_win, self._small_tabs, "Project Manager")
         self._focus.register("6", self._watch_win, self._list_tabs, "Watch")
         self._focus.register("7", self._watch_did_win, self._list_tabs, "Watch DID")
@@ -128,6 +129,7 @@ class MainWindow(QMainWindow):
             ("2", "Trace", "Window switch"),
             ("3", "Plot", "Window switch"),
             ("4", "Diagnostics", "Window switch"),
+            ("D", "Database", "Window switch"),
             ("5", "Project Manager", "Window switch"),
             ("6", "Watch", "Window switch"),
             ("7", "Watch DID", "Window switch"),
@@ -149,17 +151,6 @@ class MainWindow(QMainWindow):
             ("F11", "Full screen", "View"),
         ])
 
-        # Focus stylesheet
-        self.setStyleSheet(self.styleSheet() + """
-            QTreeView[focused="true"]::item:selected,
-            QTableView[focused="true"]::item:selected {
-                background-color: #308CC6; color: white;
-            }
-            QTreeView[focused="false"]::item:selected,
-            QTableView[focused="false"]::item:selected {
-                background-color: #D0D0D0; color: #606060;
-            }
-        """)
 
     def _create_layout(self):
         # Create windows
@@ -185,8 +176,6 @@ class MainWindow(QMainWindow):
         self._trace_model.file_changed.connect(self._on_trace_file_changed)
 
         self._project_win = ProjectWindow(self._project_model)
-        self._project_win.add_file_requested.connect(self._import_dbc)
-        self._project_win.remove_file_requested.connect(self._remove_dbc)
         self._project_win.new_requested.connect(self._new_project)
         self._project_win.load_requested.connect(self._open_project)
         self._project_win.save_requested.connect(self._save_project)
@@ -215,6 +204,11 @@ class MainWindow(QMainWindow):
         self._plot_list_win.signal_removed.connect(
             lambda arb_id, _: self._plot_trace_service.remove_arb_id(arb_id))
 
+        self._database_win = DatabaseWindow()
+        self._database_win.dbc_imported.connect(self._on_dbc_imported)
+        self._database_win.add_to_watch_requested.connect(self._add_signal_to_watch)
+        self._database_win.add_to_plot_requested.connect(self._add_signal_to_plot)
+
         # 3-pane layout with QSplitter + QTabWidget
         self._h_splitter = QSplitter(Qt.Orientation.Horizontal)
 
@@ -223,6 +217,7 @@ class MainWindow(QMainWindow):
         self._main_tabs.setTabsClosable(False)
         self._main_tabs.setMovable(True)
         self._main_tabs.addTab(self._rx_tx_win, "Receive/Transmit [1]")
+        self._main_tabs.addTab(self._database_win, "Database [D]")
         self._main_tabs.addTab(self._trace_win, "Trace [2]")
         self._main_tabs.addTab(self._plot_win, "Plot [3]")
         self._main_tabs.addTab(self._diag_win, "Diagnostics [4]")
@@ -242,6 +237,8 @@ class MainWindow(QMainWindow):
         self._list_tabs = QTabWidget()
         self._list_tabs.setTabsClosable(False)
         self._list_tabs.setMovable(True)
+        self._list_tabs.setUsesScrollButtons(True)
+        self._list_tabs.setElideMode(Qt.TextElideMode.ElideNone)
         self._list_tabs.addTab(self._watch_win, "Watch [6]")
         self._list_tabs.addTab(self._watch_did_win, "Watch DID [7]")
         self._list_tabs.addTab(self._dtc_win, "DTC [8]")
@@ -292,14 +289,14 @@ class MainWindow(QMainWindow):
         _shortcut("Shift+Ctrl+S", self._save_project)
 
         # View — window switching
-        _shortcut("Alt+1", lambda: self._focus.activate(4))   # Project Manager
+        _shortcut("Alt+1", lambda: self._focus.activate(5))   # Project Manager
         _shortcut("Alt+2", lambda: self._focus.activate(1))   # Trace
         _shortcut("Alt+3", lambda: self._focus.activate(2))   # Plot
-        _shortcut("Alt+4", lambda: self._focus.activate(5))   # Watch
-        _shortcut("Alt+5", lambda: self._focus.activate(8))   # Rx Filter
+        _shortcut("Alt+4", lambda: self._focus.activate(6))   # Watch
+        _shortcut("Alt+5", lambda: self._focus.activate(4))   # Database
         _shortcut("Alt+6", lambda: self._focus.activate(3))   # Diagnostics
-        _shortcut("Alt+7", lambda: self._focus.activate(7))   # DTC
-        _shortcut("Alt+8", lambda: self._focus.activate(6))   # Watch DID
+        _shortcut("Alt+7", lambda: self._focus.activate(9))   # DTC
+        _shortcut("Alt+8", lambda: self._focus.activate(8))   # Watch DID
         _shortcut("Ctrl+R", lambda: self._focus.activate(0))  # Receive/Transmit
         _shortcut("F11", self._toggle_fullscreen)
 
@@ -339,6 +336,7 @@ class MainWindow(QMainWindow):
             if conn.bus.is_connected:
                 conn.bus.send(msg)
                 return
+        raise RuntimeError("No connected bus")
 
     # -- TX management --
 
@@ -349,22 +347,15 @@ class MainWindow(QMainWindow):
 
     # -- DBC / Database management --
 
-    def _import_dbc(self):
-        path = get_dbc_file_path(self)
-        if path:
-            try:
-                self._db_manager.load_file(path)
-                self._project.add_database_file(path)
-                self._project_win.refresh()
-                self._rx_model.refresh_symbols()
-                self._tx_model.refresh_signals()
-            except Exception as e:
-                from PySide6.QtWidgets import QMessageBox
-                QMessageBox.warning(self, "Import Error", f"Failed to load database:\n{e}")
-
-    def _remove_dbc(self, path: str):
-        self._db_manager.remove_file(path)
-        self._project.remove_database_file(path)
+    def _on_dbc_imported(self, path: str):
+        """Called when the Database view successfully imports a DBC file."""
+        try:
+            self._db_manager.load_file(path)
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Import Error", f"Failed to load database:\n{e}")
+            return
+        self._project.add_database_file(path)
         self._project_win.refresh()
         self._rx_model.refresh_symbols()
         self._tx_model.refresh_signals()
@@ -380,6 +371,7 @@ class MainWindow(QMainWindow):
         self._trace_model.clear()
         self._trace_model.set_trace_folder(None)
         self._rx_filter_model.from_dicts([])
+        self._database_win.from_dict([])
         self._project_win.refresh()
         self.setWindowTitle("cangui - Untitled")
 
@@ -388,6 +380,10 @@ class MainWindow(QMainWindow):
             self, "Open Project", "", "Project Files (*.json);;All Files (*)")
         if not path:
             return
+        self.open_project(path)
+
+    def open_project(self, path: str):
+        """Open a project file by path (called from CLI or file dialog)."""
         try:
             self._project.load(path)
             self._restore_project_state()
@@ -401,13 +397,23 @@ class MainWindow(QMainWindow):
         """Restore application state from loaded project data."""
         data = self._project.data
 
-        # Reload databases
+        # Reload databases into db_manager and database view
         self._db_manager.clear()
+        self._database_win.from_dict([])
+
+        # Import DBC files into both the view and decode manager
         for db_file in data.database_files:
             try:
                 self._db_manager.load_file(db_file)
+                self._database_win.import_dbc_silent(db_file)
             except Exception:
                 pass
+
+        # Append manually created databases from .db.json
+        db_editor_data = self._project.load_database_editor()
+        if db_editor_data:
+            self._database_win.append_from_dict(db_editor_data)
+
         self._project_win.refresh()
         self._rx_model.refresh_symbols()
         self._tx_model.refresh_signals()
@@ -575,6 +581,12 @@ class MainWindow(QMainWindow):
         # Settings
         data.settings = self._settings_win.collect_settings()
 
+        # Database editor — only save manually created databases
+        db_data = self._database_win.manual_databases_to_dict()
+        if db_data:
+            self._project.save_database_editor(db_data)
+
+
     def _close_project(self):
         self._project.new()
         self._db_manager.clear()
@@ -655,13 +667,13 @@ class MainWindow(QMainWindow):
 
     # -- UDS / Diagnostics --
 
-    def _uds_connect(self, tx_id: int, rx_id: int):
-        """Connect UDS service using the first connected CAN bus."""
-        bus = self._get_raw_bus()
+    def _uds_connect(self, tx_id: int, rx_id: int, bus_number: int = 0):
+        """Connect UDS service using the specified CAN bus (or first connected)."""
+        bus = self._get_raw_bus(bus_number)
         if bus is None:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "UDS Error",
-                                "No CAN bus connected. Add a connection first.")
+                                "No matching CAN bus connected. Add a connection first.")
             return
         config = UdsConfig(tx_id=tx_id, rx_id=rx_id)
         self._uds_service.connect(bus, config)
@@ -669,11 +681,19 @@ class MainWindow(QMainWindow):
     def _uds_disconnect(self):
         self._uds_service.disconnect()
 
-    def _get_raw_bus(self):
-        """Get the underlying python-can bus from the first connected connection."""
+    def _get_raw_bus(self, bus_number: int = 0):
+        """Get the underlying python-can bus matching the bus number.
+
+        If bus_number is 0 or no match is found, falls back to first connected bus.
+        """
+        if bus_number > 0:
+            for conn in self._can_service.connections:
+                if conn.bus.is_connected and conn.config.bus_number == bus_number:
+                    return conn.bus._bus
+        # Fallback: first connected bus
         for conn in self._can_service.connections:
             if conn.bus.is_connected:
-                return conn.bus._bus  # Access the raw can.Bus
+                return conn.bus._bus
         return None
 
     # -- Watch --
@@ -699,7 +719,6 @@ class MainWindow(QMainWindow):
 
     def _add_signal_to_plot(self, arb_id: int, signal_name: str, unit: str):
         self._plot_list_win.add_signal(arb_id, signal_name, unit)
-        self._main_tabs.setCurrentWidget(self._plot_win)
 
     # -- Settings --
 
@@ -773,7 +792,7 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._apply_ratios()
+        QTimer.singleShot(0, self._apply_ratios)
 
     def closeEvent(self, event):
         if self._trace_player is not None:

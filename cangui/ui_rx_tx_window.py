@@ -1,14 +1,42 @@
 from PySide6.QtWidgets import (
-    QComboBox, QHeaderView, QTreeView, QSplitter, QStyledItemDelegate,
-    QToolBar, QLabel, QWidget, QVBoxLayout,
+    QApplication, QComboBox, QHeaderView, QTreeView, QSplitter,
+    QStyledItemDelegate, QToolBar, QLabel, QWidget, QVBoxLayout,
 )
 from PySide6.QtGui import QAction
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QEvent, QObject
 
 from cangui.model_rx_message import RxMessageModel
 from cangui.model_tx_message import TxMessageModel
 from cangui.model_connection import ConnectionModel, InterfaceDelegate
 from cangui.ui_base_dock_window import BaseDockWindow
+from cangui.ui_tab_navigation import TabTreeView
+from cangui.icons import icon as _icon
+
+
+class _ClickOutsideFilter(QObject):
+    """App-level event filter: clears all view selections when a mouse press
+    lands inside the RxTxWindow but outside the three tree views."""
+
+    def __init__(self, window: QWidget, views: list, parent=None):
+        super().__init__(parent)
+        self._window = window
+        self._views  = views
+
+    def eventFilter(self, obj, event) -> bool:
+        if event.type() == QEvent.Type.MouseButtonPress:
+            target = QApplication.widgetAt(event.globalPosition().toPoint())
+            if target is not None and self._inside_window(target):
+                if not any(self._inside_view(target, v) for v in self._views):
+                    for v in self._views:
+                        v.clearSelection()
+        return False  # never consume the event
+
+    def _inside_window(self, widget: QWidget) -> bool:
+        return widget is self._window or self._window.isAncestorOf(widget)
+
+    @staticmethod
+    def _inside_view(widget: QWidget, view: QWidget) -> bool:
+        return widget is view or view.isAncestorOf(widget)
 
 
 class SymbolDelegate(QStyledItemDelegate):
@@ -44,8 +72,8 @@ class SymbolDelegate(QStyledItemDelegate):
     def setModelData(self, editor, model, index):
         model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
 
-# Column widths: Bus, CAN-ID, Type, Length, Symbol, Data, ...
-_DEFAULT_WIDTHS = [40, 80, 50, 50, 120, 200, 80, 60, 60, 60]
+# Column widths: Bus, ID, Ext, Type, Length, Symbol, Data, ...
+_DEFAULT_WIDTHS = [40, 80, 35, 50, 50, 120, 200, 80, 60, 60, 60]
 
 
 class RxTxWindow(BaseDockWindow):
@@ -68,20 +96,20 @@ class RxTxWindow(BaseDockWindow):
         toolbar = QToolBar()
         toolbar.setMovable(False)
 
-        rx_title = QLabel(" Receive ")
-        rx_title.setStyleSheet("font-weight: bold;")
+        rx_title = QLabel("  RX  ")
+        rx_title.setStyleSheet("font-weight: bold; font-size: 15px; letter-spacing: 1px;")
         toolbar.addWidget(rx_title)
         toolbar.addSeparator()
 
-        clear_action = QAction("Clear", self)
+        clear_action = QAction(_icon("trash"), "Clear", self)
         clear_action.triggered.connect(self._on_clear)
         toolbar.addAction(clear_action)
 
-        add_rx_watch_action = QAction("Add to Watch", self)
+        add_rx_watch_action = QAction(_icon("watch"), "Add to Watch", self)
         add_rx_watch_action.triggered.connect(self._add_rx_to_watch)
         toolbar.addAction(add_rx_watch_action)
 
-        add_rx_plot_action = QAction("Add to Plot", self)
+        add_rx_plot_action = QAction(_icon("plot"), "Add to Plot", self)
         add_rx_plot_action.triggered.connect(self._add_rx_to_plot)
         toolbar.addAction(add_rx_plot_action)
 
@@ -96,7 +124,7 @@ class RxTxWindow(BaseDockWindow):
         rx_layout.setContentsMargins(0, 0, 0, 0)
         rx_layout.setSpacing(0)
 
-        self._rx_view = QTreeView()
+        self._rx_view = TabTreeView()
         self._rx_view.setRootIsDecorated(True)
         self._rx_view.setAlternatingRowColors(True)
         self._rx_view.setModel(self._rx_model)
@@ -118,49 +146,49 @@ class RxTxWindow(BaseDockWindow):
         tx_toolbar = QToolBar()
         tx_toolbar.setMovable(False)
 
-        tx_title = QLabel(" Transmit ")
-        tx_title.setStyleSheet("font-weight: bold;")
+        tx_title = QLabel("  TX  ")
+        tx_title.setStyleSheet("font-weight: bold; font-size: 15px; letter-spacing: 1px;")
         tx_toolbar.addWidget(tx_title)
         tx_toolbar.addSeparator()
 
-        add_tx_action = QAction("Add Frame", self)
+        add_tx_action = QAction(_icon("add"), "Add Frame", self)
         add_tx_action.triggered.connect(self.add_tx_requested)
         tx_toolbar.addAction(add_tx_action)
 
-        remove_tx_action = QAction("Remove", self)
+        remove_tx_action = QAction(_icon("remove"), "Remove", self)
         remove_tx_action.triggered.connect(self._remove_tx)
         tx_toolbar.addAction(remove_tx_action)
 
-        duplicate_tx_action = QAction("Duplicate", self)
+        duplicate_tx_action = QAction(_icon("copy"), "Duplicate", self)
         duplicate_tx_action.triggered.connect(self._duplicate_tx)
         tx_toolbar.addAction(duplicate_tx_action)
 
-        send_once_action = QAction("Send Once", self)
+        send_once_action = QAction(_icon("send"), "Send Once", self)
         send_once_action.triggered.connect(self._send_once)
         tx_toolbar.addAction(send_once_action)
 
-        clear_counters_action = QAction("Clear Counters", self)
+        clear_counters_action = QAction(_icon("clear"), "Clear Counters", self)
         clear_counters_action.triggered.connect(self._clear_tx_counters)
         tx_toolbar.addAction(clear_counters_action)
 
-        add_tx_watch_action = QAction("Add to Watch", self)
+        add_tx_watch_action = QAction(_icon("watch"), "Add to Watch", self)
         add_tx_watch_action.triggered.connect(self._add_tx_to_watch)
         tx_toolbar.addAction(add_tx_watch_action)
 
-        add_tx_plot_action = QAction("Add to Plot", self)
+        add_tx_plot_action = QAction(_icon("plot"), "Add to Plot", self)
         add_tx_plot_action.triggered.connect(self._add_tx_to_plot)
         tx_toolbar.addAction(add_tx_plot_action)
 
         tx_layout.addWidget(tx_toolbar)
 
-        self._tx_view = QTreeView()
+        self._tx_view = TabTreeView()
         self._tx_view.setRootIsDecorated(True)
         self._tx_view.setAlternatingRowColors(True)
         self._tx_view.setModel(self._tx_model)
         self._tx_view.header().setStretchLastSection(True)
         self._tx_view.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._tx_view.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
-        self._tx_view.setItemDelegateForColumn(4, SymbolDelegate(self._tx_view))
+        self._tx_view.setItemDelegateForColumn(5, SymbolDelegate(self._tx_view))
         self._set_default_widths(self._tx_view)
         tx_layout.addWidget(self._tx_view)
         self._splitter.addWidget(tx_container)
@@ -174,32 +202,32 @@ class RxTxWindow(BaseDockWindow):
         conn_toolbar = QToolBar()
         conn_toolbar.setMovable(False)
 
-        conn_title = QLabel(" Connections ")
-        conn_title.setStyleSheet("font-weight: bold;")
+        conn_title = QLabel("  Connections  ")
+        conn_title.setStyleSheet("font-weight: bold; font-size: 15px; letter-spacing: 1px;")
         conn_toolbar.addWidget(conn_title)
         conn_toolbar.addSeparator()
 
-        add_conn_action = QAction("Add", self)
+        add_conn_action = QAction(_icon("add"), "Add", self)
         add_conn_action.triggered.connect(self.add_connection_requested)
         conn_toolbar.addAction(add_conn_action)
 
-        remove_conn_action = QAction("Remove", self)
+        remove_conn_action = QAction(_icon("remove"), "Remove", self)
         remove_conn_action.triggered.connect(self._remove_connection)
         conn_toolbar.addAction(remove_conn_action)
 
-        reset_conn_action = QAction("Reset", self)
+        reset_conn_action = QAction(_icon("refresh"), "Reset", self)
         reset_conn_action.triggered.connect(self.reset_connections_requested)
         conn_toolbar.addAction(reset_conn_action)
 
         conn_layout.addWidget(conn_toolbar)
 
-        self._conn_view = QTreeView()
+        self._conn_view = TabTreeView()
         self._conn_view.setRootIsDecorated(False)
         self._conn_view.setAlternatingRowColors(True)
         self._conn_view.setModel(self._connection_model)
         self._conn_view.setItemDelegateForColumn(4, InterfaceDelegate(self._conn_view))
         self._conn_view.header().setStretchLastSection(True)
-        self._conn_view.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self._conn_view.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         conn_layout.addWidget(self._conn_view)
         self._splitter.addWidget(conn_container)
 
@@ -208,6 +236,16 @@ class RxTxWindow(BaseDockWindow):
         self._splitter.setStretchFactor(2, 1)
 
         self._layout.addWidget(self._splitter)
+
+        # Exclusive selection: selecting in one pane clears the other two
+        self._rx_view.selectionModel().selectionChanged.connect(self._on_rx_selected)
+        self._tx_view.selectionModel().selectionChanged.connect(self._on_tx_selected)
+        self._conn_view.selectionModel().selectionChanged.connect(self._on_conn_selected)
+
+        # Clear all selections on any click outside the three views
+        self._click_filter = _ClickOutsideFilter(
+            self, [self._rx_view, self._tx_view, self._conn_view], self)
+        QApplication.instance().installEventFilter(self._click_filter)
 
     @property
     def splitter(self) -> QSplitter:
@@ -236,6 +274,23 @@ class RxTxWindow(BaseDockWindow):
 
     def set_send_once_callback(self, callback):
         self._send_once_callback = callback
+
+    # -- Exclusive selection across the three sub-views --
+
+    def _on_rx_selected(self, selected, _):
+        if selected.indexes():
+            self._tx_view.clearSelection()
+            self._conn_view.clearSelection()
+
+    def _on_tx_selected(self, selected, _):
+        if selected.indexes():
+            self._rx_view.clearSelection()
+            self._conn_view.clearSelection()
+
+    def _on_conn_selected(self, selected, _):
+        if selected.indexes():
+            self._rx_view.clearSelection()
+            self._tx_view.clearSelection()
 
     def _on_clear(self):
         self._rx_model.clear()

@@ -10,6 +10,7 @@ from PySide6.QtGui import QAction
 
 from cangui.uds_client import UdsResponse
 from cangui.service_uds import UdsService
+from cangui.icons import icon as _icon
 
 
 @dataclass
@@ -130,28 +131,28 @@ class WatchDidWindow(QWidget):
         toolbar = QToolBar()
         toolbar.setMovable(False)
 
-        self._start_action = QAction("Start Polling", self)
+        self._start_action = QAction(_icon("play"), "Start Polling", self)
         self._start_action.triggered.connect(self._on_start)
         toolbar.addAction(self._start_action)
 
-        self._stop_action = QAction("Stop Polling", self)
+        self._stop_action = QAction(_icon("stop"), "Stop Polling", self)
         self._stop_action.setEnabled(False)
         self._stop_action.triggered.connect(self._on_stop)
         toolbar.addAction(self._stop_action)
 
         toolbar.addSeparator()
 
-        remove_action = QAction("Remove", self)
+        remove_action = QAction(_icon("remove"), "Remove", self)
         remove_action.triggered.connect(self._on_remove)
         toolbar.addAction(remove_action)
 
-        clear_action = QAction("Clear All", self)
+        clear_action = QAction(_icon("trash"), "Clear All", self)
         clear_action.triggered.connect(self._on_clear)
         toolbar.addAction(clear_action)
 
         toolbar.addSeparator()
 
-        add_to_plot_action = QAction("Add to Plot", self)
+        add_to_plot_action = QAction(_icon("plot"), "Add to Plot", self)
         add_to_plot_action.triggered.connect(self._on_add_to_plot)
         toolbar.addAction(add_to_plot_action)
 
@@ -194,7 +195,7 @@ class WatchDidWindow(QWidget):
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
+            QHeaderView.ResizeMode.Interactive
         )
         layout.addWidget(self._table)
 

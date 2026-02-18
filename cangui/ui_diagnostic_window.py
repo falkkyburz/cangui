@@ -9,6 +9,7 @@ from PySide6.QtGui import QAction
 from cangui.uds_client import UdsResponse
 from cangui.security_loader import SecurityLoader
 from cangui.service_uds import UdsService
+from cangui.icons import icon as _icon
 
 
 # Common UDS sessions
@@ -37,7 +38,7 @@ class DiagnosticWindow(QWidget):
 
     TITLE = "Diagnostics"
 
-    connect_requested = Signal(int, int)  # tx_id, rx_id
+    connect_requested = Signal(int, int, int)  # tx_id, rx_id, bus_number
     disconnect_requested = Signal()
 
     def __init__(self, uds_service: UdsService, parent=None):
@@ -52,18 +53,18 @@ class DiagnosticWindow(QWidget):
         toolbar = QToolBar()
         toolbar.setMovable(False)
 
-        self._connect_action = QAction("Connect", self)
+        self._connect_action = QAction(_icon("connect"), "Connect", self)
         self._connect_action.triggered.connect(self._on_connect)
         toolbar.addAction(self._connect_action)
 
-        self._disconnect_action = QAction("Disconnect", self)
+        self._disconnect_action = QAction(_icon("disconnect"), "Disconnect", self)
         self._disconnect_action.setEnabled(False)
         self._disconnect_action.triggered.connect(self._on_disconnect)
         toolbar.addAction(self._disconnect_action)
 
         toolbar.addSeparator()
 
-        self._tester_present_action = QAction("Tester Present", self)
+        self._tester_present_action = QAction(_icon("heartbeat"), "Tester Present", self)
         self._tester_present_action.triggered.connect(self._uds.tester_present)
         toolbar.addAction(self._tester_present_action)
 
@@ -80,6 +81,12 @@ class DiagnosticWindow(QWidget):
         # Connection settings
         conn_group = QGroupBox("Connection")
         conn_form = QFormLayout(conn_group)
+
+        self._bus_spin = QSpinBox()
+        self._bus_spin.setRange(1, 99)
+        self._bus_spin.setValue(1)
+        self._bus_spin.setMaximumWidth(100)
+        conn_form.addRow("Bus:", self._bus_spin)
 
         self._tx_id_edit = QLineEdit("7E0")
         self._tx_id_edit.setMaximumWidth(100)
@@ -233,7 +240,7 @@ class DiagnosticWindow(QWidget):
             return 0x7E8
 
     def _on_connect(self):
-        self.connect_requested.emit(self._get_tx_id(), self._get_rx_id())
+        self.connect_requested.emit(self._get_tx_id(), self._get_rx_id(), self._bus_spin.value())
 
     def _on_disconnect(self):
         self.disconnect_requested.emit()

@@ -1,11 +1,13 @@
 from PySide6.QtWidgets import (
-    QHeaderView, QTableView, QToolBar, QComboBox, QStyledItemDelegate,
+    QHeaderView, QToolBar, QComboBox, QStyledItemDelegate,
 )
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt
 
 from cangui.model_rx_filter import RxFilterModel, FilterAction
 from cangui.ui_base_dock_window import BaseDockWindow
+from cangui.ui_tab_navigation import TabTableView
+from cangui.icons import icon as _icon
 
 
 class ActionDelegate(QStyledItemDelegate):
@@ -36,38 +38,38 @@ class RxFilterWindow(BaseDockWindow):
         toolbar = QToolBar()
         toolbar.setMovable(False)
 
-        add_pass_action = QAction("Add Pass", self)
+        add_pass_action = QAction(_icon("pass"), "Add Pass", self)
         add_pass_action.triggered.connect(lambda: self._model.add_rule(FilterAction.PASS))
         toolbar.addAction(add_pass_action)
 
-        add_drop_action = QAction("Add Drop", self)
+        add_drop_action = QAction(_icon("drop"), "Add Drop", self)
         add_drop_action.triggered.connect(lambda: self._model.add_rule(FilterAction.DROP))
         toolbar.addAction(add_drop_action)
 
-        remove_action = QAction("Remove", self)
+        remove_action = QAction(_icon("remove"), "Remove", self)
         remove_action.triggered.connect(self._on_remove)
         toolbar.addAction(remove_action)
 
         toolbar.addSeparator()
 
-        up_action = QAction("Up", self)
+        up_action = QAction(_icon("up"), "Up", self)
         up_action.triggered.connect(self._on_move_up)
         toolbar.addAction(up_action)
 
-        down_action = QAction("Down", self)
+        down_action = QAction(_icon("down"), "Down", self)
         down_action.triggered.connect(self._on_move_down)
         toolbar.addAction(down_action)
 
         self._layout.addWidget(toolbar)
 
-        self._view = QTableView()
+        self._view = TabTableView()
         self._view.setModel(self._model)
         self._view.setAlternatingRowColors(True)
-        self._view.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        self._view.setSelectionBehavior(TabTableView.SelectionBehavior.SelectRows)
         self._view.verticalHeader().setVisible(False)
         self._view.horizontalHeader().setStretchLastSection(True)
         self._view.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
+            QHeaderView.ResizeMode.Interactive
         )
         self._view.setItemDelegateForColumn(1, ActionDelegate(self._view))
         self._layout.addWidget(self._view)

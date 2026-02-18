@@ -56,7 +56,7 @@ class HelpWindow(QWidget):
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
+            QHeaderView.ResizeMode.Interactive
         )
         layout.addWidget(self._table)
 

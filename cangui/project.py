@@ -17,6 +17,7 @@ class ProjectData:
     workspace_state: str = ""  # JSON splitter/tab state
     settings: dict = field(default_factory=dict)
     plot_files: list[str] = field(default_factory=list)
+    database_editor_file: str = ""
 
 
 class Project:
@@ -105,8 +106,28 @@ class Project:
             workspace_state=raw.get("workspace_state", ""),
             settings=raw.get("settings", {}),
             plot_files=raw.get("plot_files", []),
+            database_editor_file=raw.get("database_editor_file", ""),
         )
         self._modified = False
+
+    def save_database_editor(self, data: list[dict]):
+        """Save database editor content to a separate JSON file next to the project."""
+        if self._path is None:
+            return
+        db_file = self._path.with_suffix(".db.json")
+        self._data.database_editor_file = db_file.name
+        with open(db_file, "w") as f:
+            json.dump(data, f, indent=2)
+
+    def load_database_editor(self) -> list[dict]:
+        """Load database editor content from the separate file."""
+        if not self._data.database_editor_file or self._path is None:
+            return []
+        db_path = self._path.parent / self._data.database_editor_file
+        if not db_path.exists():
+            return []
+        with open(db_path) as f:
+            return json.load(f)
 
     def new(self, name: str = "Untitled"):
         self._data = ProjectData(name=name)

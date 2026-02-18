@@ -1,10 +1,11 @@
 from PySide6.QtCore import Qt, QAbstractItemModel, QModelIndex, Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QTreeView, QStyledItemDelegate,
+    QWidget, QVBoxLayout, QStyledItemDelegate,
     QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox,
 )
 
 from cangui.options import AppOptions
+from cangui.ui_tab_navigation import TabTreeView
 
 
 class SettingNode:
@@ -275,7 +276,7 @@ class SettingsWindow(QWidget):
         self._model = SettingsModel(options, self)
         self._model.setting_changed.connect(self.setting_changed)
 
-        self._tree = QTreeView()
+        self._tree = TabTreeView()
         self._tree.setModel(self._model)
         self._tree.setAlternatingRowColors(True)
         self._tree.setItemDelegateForColumn(1, SettingsDelegate(self._tree))

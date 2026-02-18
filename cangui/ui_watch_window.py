@@ -4,6 +4,7 @@ from PySide6.QtCore import Signal
 
 from cangui.model_watch import WatchModel
 from cangui.ui_base_dock_window import BaseDockWindow
+from cangui.icons import icon as _icon
 
 
 class WatchWindow(BaseDockWindow):
@@ -19,17 +20,17 @@ class WatchWindow(BaseDockWindow):
         toolbar = QToolBar()
         toolbar.setMovable(False)
 
-        remove_action = QAction("Remove", self)
+        remove_action = QAction(_icon("remove"), "Remove", self)
         remove_action.triggered.connect(self._on_remove)
         toolbar.addAction(remove_action)
 
-        clear_action = QAction("Clear All", self)
+        clear_action = QAction(_icon("trash"), "Clear All", self)
         clear_action.triggered.connect(self._model.clear)
         toolbar.addAction(clear_action)
 
         toolbar.addSeparator()
 
-        add_to_plot_action = QAction("Add to Plot", self)
+        add_to_plot_action = QAction(_icon("plot"), "Add to Plot", self)
         add_to_plot_action.triggered.connect(self._on_add_to_plot)
         toolbar.addAction(add_to_plot_action)
 
@@ -40,7 +41,7 @@ class WatchWindow(BaseDockWindow):
         self._view.setAlternatingRowColors(True)
         self._view.setModel(self._model)
         self._view.header().setStretchLastSection(True)
-        self._view.header().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self._view.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._view.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
         self._layout.addWidget(self._view)
 

@@ -8,6 +8,7 @@ from PySide6.QtGui import QAction, QKeySequence, QShortcut
 import pyqtgraph as pg
 
 from cangui.service_plot_data import PlotDataService
+from cangui.icons import icon as _icon
 
 
 class PlotWindow(QWidget):
@@ -30,7 +31,7 @@ class PlotWindow(QWidget):
         toolbar = QToolBar()
         toolbar.setMovable(False)
 
-        clear_action = QAction("Clear Data", self)
+        clear_action = QAction(_icon("trash"), "Clear Data", self)
         clear_action.triggered.connect(self._on_clear_data)
         toolbar.addAction(clear_action)
 
@@ -57,7 +58,7 @@ class PlotWindow(QWidget):
         toolbar.addSeparator()
 
         # Record plot trace button
-        self._record_action = QAction("Record Plot Trace", self)
+        self._record_action = QAction(_icon("record"), "Record Plot Trace", self)
         self._record_action.setCheckable(True)
         self._record_action.toggled.connect(self.record_toggled)
         toolbar.addAction(self._record_action)

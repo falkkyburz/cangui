@@ -1,8 +1,11 @@
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QToolBar
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QToolBar, QHeaderView
 from PySide6.QtGui import QAction
 
-from pyqtgraph.parametertree import ParameterTree, Parameter
+from pyqtgraph.parametertree import Parameter
+
+from cangui.ui_tab_navigation import TabParameterTree
+from cangui.icons import icon as _icon
 
 
 # Predefined colors for plot curves
@@ -35,11 +38,11 @@ class PlotListWindow(QWidget):
         toolbar = QToolBar()
         toolbar.setMovable(False)
 
-        remove_action = QAction("Remove Selected", self)
+        remove_action = QAction(_icon("remove"), "Remove Selected", self)
         remove_action.triggered.connect(self._on_remove_selected)
         toolbar.addAction(remove_action)
 
-        clear_action = QAction("Clear All", self)
+        clear_action = QAction(_icon("trash"), "Clear All", self)
         clear_action.triggered.connect(self._on_clear_all)
         toolbar.addAction(clear_action)
 
@@ -47,7 +50,10 @@ class PlotListWindow(QWidget):
 
         # ParameterTree
         self._params = Parameter.create(name="Signals", type="group", children=[])
-        self._tree = ParameterTree(showHeader=False)
+        self._tree = TabParameterTree(showHeader=True)
+        self._tree.header().setSectionResizeMode(
+            QHeaderView.ResizeMode.Interactive)
+        self._tree.header().setStretchLastSection(True)
         self._tree.setParameters(self._params, showTop=False)
         layout.addWidget(self._tree)
 

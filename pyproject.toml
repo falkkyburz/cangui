@@ -13,4 +13,5 @@ dependencies = [
     "udsoncan>=1.25.0",
     "can-isotp>=2.0.0",
     "numpy>=1.26.0",
+    "qtawesome>=0.8.0",
 ]

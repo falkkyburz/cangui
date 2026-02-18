@@ -1,14 +1,11 @@
 {
   "name": "fast",
   "database_files": [
-    "/home/falk/Work/cangui/test.dbc"
+    "/home/falk/Work/cangui/test/test.dbc"
   ],
   "trace_files": [
-    "/home/falk/Work/cangui/trace/2026-02-13T21-37-09.trc",
-    "/home/falk/Work/cangui/trace/2026-02-13T21-39-45.trc",
-    "/home/falk/Work/cangui/trace/2026-02-13T21-45-53.trc",
-    "/home/falk/Work/cangui/trace/2026-02-13T21-48-50.trc",
-    "/home/falk/Work/cangui/trace/2026-02-13T21-50-57.trc"
+    "/home/falk/Work/cangui/test/trace/2026-02-18T19-37-24.trc",
+    "/home/falk/Work/cangui/test/trace/2026-02-18T19-56-00.trc"
   ],
   "watch_signals": [],
   "tx_messages": [
@@ -19,7 +16,7 @@
       "length": 3,
       "symbol": "BrakeData",
       "raw_data": "00c800",
-      "cycle_time_ms": 50,
+      "cycle_time_ms": 1,
       "cycle_enabled": true
     },
     {
@@ -29,7 +26,7 @@
       "length": 8,
       "symbol": "EngineData",
       "raw_data": "800c822601000000",
-      "cycle_time_ms": 100,
+      "cycle_time_ms": 1,
       "cycle_enabled": true
     },
     {
@@ -39,7 +36,7 @@
       "length": 2,
       "symbol": "Lights",
       "raw_data": "0100",
-      "cycle_time_ms": 500,
+      "cycle_time_ms": 1,
       "cycle_enabled": true
     },
     {
@@ -49,205 +46,45 @@
       "length": 4,
       "symbol": "VehicleSpeed",
       "raw_data": "70173930",
-      "cycle_time_ms": 200,
+      "cycle_time_ms": 1,
       "cycle_enabled": true
     },
     {
       "bus": 1,
-      "can_id": 0,
+      "can_id": 1280,
       "is_extended_id": false,
       "length": 8,
-      "symbol": "",
+      "symbol": "BitMatrix",
       "raw_data": "0000000000000000",
       "cycle_time_ms": 1,
       "cycle_enabled": true
     },
     {
       "bus": 1,
-      "can_id": 1,
+      "can_id": 1280,
       "is_extended_id": false,
       "length": 8,
-      "symbol": "",
+      "symbol": "BitMatrix",
       "raw_data": "0000000000000000",
       "cycle_time_ms": 1,
       "cycle_enabled": true
     },
     {
       "bus": 1,
-      "can_id": 2,
+      "can_id": 1280,
       "is_extended_id": false,
       "length": 8,
-      "symbol": "",
+      "symbol": "BitMatrix",
       "raw_data": "0000000000000000",
       "cycle_time_ms": 1,
       "cycle_enabled": true
     },
     {
       "bus": 1,
-      "can_id": 3,
+      "can_id": 1280,
       "is_extended_id": false,
       "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 4,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 5,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 6,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 7,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 8,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 9,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 16,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 16,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 16,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 16,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 16,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 16,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 16,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 16,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 16,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 16,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "",
+      "symbol": "BitMatrix",
       "raw_data": "0000000000000000",
       "cycle_time_ms": 1,
       "cycle_enabled": true
@@ -290,6 +127,196 @@
       "symbol": "BitMatrix",
       "raw_data": "0000000000000000",
       "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 5592405,
+      "is_extended_id": true,
+      "length": 8,
+      "symbol": "",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 100,
       "cycle_enabled": true
     }
   ],
@@ -323,5 +350,24 @@
       "name": "Extended"
     }
   ],
-  "workspace_state": "{\"h_splitter\": [920, 617], \"v_splitter\": [305, 702], \"rxtx_splitter\": [473, 307, 160], \"main_tabs\": {\"order\": [\"Receive/Transmit\", \"Trace\", \"Plot\", \"Diagnostics\"], \"current\": 0}, \"small_tabs\": {\"order\": [\"Project Manager\"], \"current\": 0}, \"list_tabs\": {\"order\": [\"Watch\", \"Watch DID\", \"DTC\", \"Rx Filter\", \"Help\"], \"current\": 0}}"
+  "workspace_state": "{\"h_splitter\": [860, 577], \"v_splitter\": [311, 715], \"rxtx_splitter\": [247, 538, 161], \"main_tabs\": {\"order\": [\"Receive/Transmit [1]\", \"Database [D]\", \"Trace [2]\", \"Plot [3]\", \"Diagnostics [4]\"], \"current\": 0}, \"small_tabs\": {\"order\": [\"Project Manager [5]\"], \"current\": 0}, \"list_tabs\": {\"order\": [\"Watch [6]\", \"Watch DID [7]\", \"DTC [8]\", \"Rx Filter [9]\", \"Plot List [B]\", \"Settings [A]\", \"Help [0]\"], \"current\": 0}}",
+  "settings": {
+    "general": {
+      "float_format": "f",
+      "decimal_places": 3,
+      "timestamp_format": "relative"
+    },
+    "tracer": {
+      "buffer_size": 100000,
+      "auto_scroll": true,
+      "trace_format": "trc"
+    },
+    "plot": {
+      "time_window": 10.0,
+      "max_display_points": 5000,
+      "update_interval_ms": 50
+    }
+  },
+  "plot_files": [],
+  "database_editor_file": ""
 }

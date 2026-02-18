@@ -108,7 +108,7 @@ class ConnectionModel(QAbstractTableModel):
         col = index.column()
         if col == 0:
             flags |= Qt.ItemFlag.ItemIsUserCheckable
-        if col in (1, 2, 3, 4, 5):
+        if col in (2, 3, 4, 5):
             flags |= Qt.ItemFlag.ItemIsEditable
         return flags
 
@@ -128,11 +128,6 @@ class ConnectionModel(QAbstractTableModel):
             col = index.column()
 
             match col:
-                case 1:
-                    try:
-                        conn.config.bus_number = int(value)
-                    except (ValueError, TypeError):
-                        return False
                 case 2:
                     conn.config.name = str(value)
                 case 3:

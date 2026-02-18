@@ -1,0 +1,31 @@
+[
+  {
+    "filename": "manual",
+    "bus": 1,
+    "messages": [
+      {
+        "name": "NewMessage",
+        "id": "0x101",
+        "dlc": 8,
+        "cycle_time": 0,
+        "sender": "",
+        "comment": "",
+        "signals": [
+          {
+            "name": "NewSignal",
+            "start_bit": 0,
+            "bit_length": 8,
+            "byte_order": "little_endian",
+            "is_signed": false,
+            "factor": 1.0,
+            "offset": 0.0,
+            "minimum": 0.0,
+            "maximum": 0.0,
+            "unit": "",
+            "comment": ""
+          }
+        ]
+      }
+    ]
+  }
+]

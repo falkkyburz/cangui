@@ -7,6 +7,7 @@ from PySide6.QtGui import QAction, QColor
 from cangui.dtc_manager import Dtc, DtcManager
 from cangui.uds_client import UdsResponse
 from cangui.service_uds import UdsService
+from cangui.icons import icon as _icon
 
 
 DTC_COLUMNS = ["DTC Code", "Display", "Status", "Status Bits", "Details"]
@@ -105,17 +106,17 @@ class DtcWindow(QWidget):
 
         toolbar.addSeparator()
 
-        read_action = QAction("Read DTCs", self)
+        read_action = QAction(_icon("search"), "Read DTCs", self)
         read_action.triggered.connect(self._on_read)
         toolbar.addAction(read_action)
 
-        clear_action = QAction("Clear DTCs", self)
+        clear_action = QAction(_icon("broom"), "Clear DTCs", self)
         clear_action.triggered.connect(self._on_clear)
         toolbar.addAction(clear_action)
 
         toolbar.addSeparator()
 
-        clear_list_action = QAction("Clear List", self)
+        clear_list_action = QAction(_icon("trash"), "Clear List", self)
         clear_list_action.triggered.connect(self._model.clear)
         toolbar.addAction(clear_list_action)
 
@@ -129,7 +130,7 @@ class DtcWindow(QWidget):
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents
+            QHeaderView.ResizeMode.Interactive
         )
         layout.addWidget(self._table)
 

@@ -18,6 +18,8 @@ class SignalItem:
     name: str = ""
     value: str = ""
     unit: str = ""
+    is_multiplexer: bool = False
+    multiplexer_ids: list[int] | None = None
 
 
 @dataclass
@@ -37,8 +39,16 @@ class RxMessageItem:
     signals: list[SignalItem] = field(default_factory=list)
 
 
-COLUMNS = ["Bus", "CAN-ID (hex)", "Type", "Length", "Symbol",
+COLUMNS = ["Bus", "ID (hex)", "Ext", "Type", "Length", "Symbol",
            "Data (hex)", "Timing Errors", "Cycle Time", "Count"]
+
+
+def _mux_prefix(sig: SignalItem) -> str:
+    if sig.is_multiplexer:
+        return "[M] "
+    if sig.multiplexer_ids is not None:
+        return "[m" + ",".join(str(i) for i in sig.multiplexer_ids) + "] "
+    return ""
 
 
 class RxMessageModel(QAbstractItemModel):
@@ -51,10 +61,17 @@ class RxMessageModel(QAbstractItemModel):
         self._decoder = decoder
         self._filter = rx_filter
 
+        self._rows_needing_decode: set[int] = set()
+
         self._batch_timer = QTimer(self)
         self._batch_timer.setInterval(50)
         self._batch_timer.timeout.connect(self._flush)
         self._batch_timer.start()
+
+        self._signal_timer = QTimer(self)
+        self._signal_timer.setInterval(200)
+        self._signal_timer.timeout.connect(self._update_signals)
+        self._signal_timer.start()
 
     def set_decoder(self, decoder: SignalDecoder):
         self._decoder = decoder
@@ -110,10 +127,16 @@ class RxMessageModel(QAbstractItemModel):
                     return QColor(Qt.GlobalColor.red)
             return None
 
-        if role != Qt.ItemDataRole.DisplayRole:
+        col = index.column()
+
+        if role == Qt.ItemDataRole.CheckStateRole:
+            if self._is_top_level(index) and col == 2 and 0 <= index.row() < len(self._items):
+                item = self._items[index.row()]
+                return Qt.CheckState.Checked if item.is_extended_id else Qt.CheckState.Unchecked
             return None
 
-        col = index.column()
+        if role != Qt.ItemDataRole.DisplayRole:
+            return None
 
         if self._is_top_level(index):
             if index.row() >= len(self._items):
@@ -125,13 +148,14 @@ class RxMessageModel(QAbstractItemModel):
                     if item.is_extended_id:
                         return f"{item.can_id:08X}"
                     return f"{item.can_id:03X}"
-                case 2: return item.frame_type
-                case 3: return item.length
-                case 4: return item.symbol
-                case 5: return " ".join(f"{b:02X}" for b in item.raw_data[:item.length])
-                case 6: return item.timing_errors if item.timing_errors else ""
-                case 7: return f"{item.cycle_time_ms:.1f}" if item.cycle_time_ms else ""
-                case 8: return item.count
+                case 2: return None  # checkbox only
+                case 3: return item.frame_type
+                case 4: return item.length
+                case 5: return item.symbol
+                case 6: return " ".join(f"{b:02X}" for b in item.raw_data[:item.length])
+                case 7: return item.timing_errors if item.timing_errors else ""
+                case 8: return f"{item.cycle_time_ms:.1f}" if item.cycle_time_ms else ""
+                case 9: return item.count
         else:
             parent_row = index.internalId() - 1
             if parent_row >= len(self._items):
@@ -141,8 +165,8 @@ class RxMessageModel(QAbstractItemModel):
                 return None
             sig = sigs[index.row()]
             match col:
-                case 4: return sig.name
-                case 5:
+                case 5: return _mux_prefix(sig) + sig.name
+                case 6:
                     if sig.unit:
                         return f"{sig.value} {sig.unit}"
                     return sig.value
@@ -187,6 +211,8 @@ class RxMessageModel(QAbstractItemModel):
                 name=ds.name,
                 value=ds.display_value,
                 unit=ds.unit,
+                is_multiplexer=ds.is_multiplexer,
+                multiplexer_ids=ds.multiplexer_ids,
             ))
 
         old_count = len(item.signals)
@@ -194,7 +220,12 @@ class RxMessageModel(QAbstractItemModel):
 
         if old_count == new_count:
             for i, sig in enumerate(new_signals):
-                item.signals[i].value = sig.value
+                old = item.signals[i]
+                old.name = sig.name
+                old.value = sig.value
+                old.unit = sig.unit
+                old.is_multiplexer = sig.is_multiplexer
+                old.multiplexer_ids = sig.multiplexer_ids
         else:
             item.signals = new_signals
 
@@ -244,10 +275,6 @@ class RxMessageModel(QAbstractItemModel):
                 self._id_to_row[key] = new_row
                 self.endInsertRows()
 
-        # Decode signals once per updated row (not per message)
-        for row in rows_to_update:
-            self._decode_signals(self._items[row])
-
         if rows_to_update:
             min_row = min(rows_to_update)
             max_row = max(rows_to_update)
@@ -255,22 +282,34 @@ class RxMessageModel(QAbstractItemModel):
                 self.index(min_row, 0),
                 self.index(max_row, self.columnCount() - 1),
             )
-            # Also notify child signal rows
-            for row in rows_to_update:
-                item = self._items[row]
-                if item.signals:
-                    parent_idx = self.index(row, 0)
-                    self.dataChanged.emit(
-                        self.index(0, 0, parent_idx),
-                        self.index(len(item.signals) - 1,
-                                   self.columnCount() - 1, parent_idx),
-                    )
+            self._rows_needing_decode.update(rows_to_update)
+
+    def _update_signals(self):
+        """Slow timer (200ms): decode signals for dirty rows and notify child views."""
+        if not self._rows_needing_decode:
+            return
+        dirty = self._rows_needing_decode
+        self._rows_needing_decode = set()
+
+        for row in dirty:
+            if row >= len(self._items):
+                continue
+            item = self._items[row]
+            self._decode_signals(item)
+            if item.signals:
+                parent_idx = self.index(row, 0)
+                self.dataChanged.emit(
+                    self.index(0, 0, parent_idx),
+                    self.index(len(item.signals) - 1,
+                               self.columnCount() - 1, parent_idx),
+                )
 
     def clear(self):
         self.beginResetModel()
         self._items.clear()
         self._id_to_row.clear()
         self._pending.clear()
+        self._rows_needing_decode.clear()
         self.endResetModel()
 
     def get_item(self, index: QModelIndex) -> RxMessageItem | None:

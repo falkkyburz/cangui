@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QAction
 
 from cangui.model_trace import TraceModel
+from cangui.icons import icon as _icon
 
 
 class TraceWindow(QWidget):
@@ -28,33 +29,33 @@ class TraceWindow(QWidget):
         toolbar = QToolBar()
         toolbar.setMovable(False)
 
-        self._start_action = QAction("Start [F9]", self)
+        self._start_action = QAction(_icon("record"), "Start [F9]", self)
         self._start_action.triggered.connect(self._on_start)
         toolbar.addAction(self._start_action)
 
-        self._pause_action = QAction("Pause", self)
+        self._pause_action = QAction(_icon("pause"), "Pause", self)
         self._pause_action.setEnabled(False)
         self._pause_action.triggered.connect(self._on_pause)
         toolbar.addAction(self._pause_action)
 
-        self._stop_action = QAction("Stop [F6]", self)
+        self._stop_action = QAction(_icon("stop"), "Stop [F6]", self)
         self._stop_action.setEnabled(False)
         self._stop_action.triggered.connect(self._on_stop)
         toolbar.addAction(self._stop_action)
 
         toolbar.addSeparator()
 
-        self._clear_action = QAction("Clear", self)
+        self._clear_action = QAction(_icon("trash"), "Clear", self)
         self._clear_action.triggered.connect(self._on_clear)
         toolbar.addAction(self._clear_action)
 
         toolbar.addSeparator()
 
-        save_action = QAction("Save...", self)
+        save_action = QAction(_icon("save"), "Save...", self)
         save_action.triggered.connect(self._on_save)
         toolbar.addAction(save_action)
 
-        load_action = QAction("Load...", self)
+        load_action = QAction(_icon("open"), "Load...", self)
         load_action.triggered.connect(self._on_load)
         toolbar.addAction(load_action)
 

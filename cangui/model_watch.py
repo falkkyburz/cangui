@@ -73,7 +73,7 @@ class WatchModel(QAbstractTableModel):
                   unit: str = "", direction: str = "Rx"):
         # Check for duplicates
         for e in self._entries:
-            if e.arb_id == arb_id and e.signal_name == signal_name:
+            if e.arb_id == arb_id and e.signal_name == signal_name and e.direction == direction:
                 return
         row = len(self._entries)
         self.beginInsertRows(QModelIndex(), row, row)

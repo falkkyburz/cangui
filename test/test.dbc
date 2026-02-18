@@ -28,6 +28,15 @@ BO_ 1024 Lights: 2 ECU2
  SG_ HazardLights : 4|1@1+ (1,0) [0|1] "" ECU1
  SG_ HighBeam : 5|1@1+ (1,0) [0|1] "" ECU1
 
+BO_ 1536 DiagResponse: 8 ECU1
+ SG_ DiagMux M : 0|4@1+ (1,0) [0|15] "" ECU2
+ SG_ EngineCode m0 : 8|16@1+ (1,0) [0|65535] "" ECU2
+ SG_ EngineHours m0 : 24|16@1+ (0.1,0) [0|6553.5] "h" ECU2
+ SG_ BatteryVoltage m1 : 8|16@1+ (0.01,0) [0|655.35] "V" ECU2
+ SG_ BatteryCurrent m1 : 24|16@1- (0.1,0) [-3276.8|3276.7] "A" ECU2
+ SG_ OilPressure m2 : 8|8@1+ (4,0) [0|1020] "kPa" ECU2
+ SG_ OilTemp m2 : 16|8@1+ (1,-40) [-40|215] "degC" ECU2
+
 BO_ 1280 BitMatrix: 8 ECU1
  SG_ Bit00 : 0|1@1+ (1,0) [0|1] "" ECU2
  SG_ Bit01 : 1|1@1+ (1,0) [0|1] "" ECU2

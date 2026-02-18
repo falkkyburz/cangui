@@ -8,6 +8,8 @@ class DecodedSignal:
     name: str
     value: object  # float, int, or str (for enum choices)
     unit: str
+    is_multiplexer: bool = False
+    multiplexer_ids: list[int] | None = None
 
     @property
     def display_value(self) -> str:
@@ -27,10 +29,23 @@ class SignalDecoder:
         decoded = self._db.decode(arb_id, data)
         if decoded is None:
             return []
+        # Build a lookup for mux metadata from the message definition
+        msg = self._db.dbc.get_message_by_id(arb_id)
+        sig_meta = {}
+        if msg is not None:
+            for sig in msg.signals:
+                sig_meta[sig.name] = sig
         result = []
         for name, value in decoded.items():
             unit = self._db.get_signal_unit(arb_id, name)
-            result.append(DecodedSignal(name=name, value=value, unit=unit))
+            meta = sig_meta.get(name)
+            result.append(DecodedSignal(
+                name=name,
+                value=value,
+                unit=unit,
+                is_multiplexer=meta.is_multiplexer if meta else False,
+                multiplexer_ids=list(meta.multiplexer_ids) if meta and meta.multiplexer_ids is not None else None,
+            ))
         return result
 
     def get_symbol(self, arb_id: int) -> str:
@@ -46,6 +61,8 @@ class SignalDecoder:
                 name=sig.name,
                 value=sig.initial if sig.initial is not None else 0,
                 unit=sig.unit or "",
+                is_multiplexer=sig.is_multiplexer,
+                multiplexer_ids=list(sig.multiplexer_ids) if sig.multiplexer_ids is not None else None,
             )
             for sig in msg.signals
         ]
