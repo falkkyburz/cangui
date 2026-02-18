@@ -3,11 +3,6 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
 
-def _norm(path: str) -> Path:
-    """Return a resolved, absolute Path for comparison (handles separator differences)."""
-    return Path(path).resolve()
-
-
 @dataclass
 class ProjectData:
     name: str = "Untitled"
@@ -55,50 +50,99 @@ class Project:
     def mark_modified(self):
         self._modified = True
 
+    # --- Path helpers ---
+
+    def _resolve_stored_path(self, stored: str) -> str:
+        """
+        Resolve a path from the project JSON to an absolute path on the current
+        platform.  Resolution order:
+
+        1. Relative paths → resolved against the project file's directory.
+        2. Absolute paths that exist on this machine → used as-is.
+        3. Absolute paths that don't exist (cross-platform / moved project):
+           try the bare filename next to the project file as a fallback.
+        4. Give up and return the stored string unchanged (will show as
+           "File not found" in the UI).
+        """
+        p = Path(stored)
+        if not p.is_absolute():
+            # Relative: resolve against project dir
+            if self._path is not None:
+                return str((self._path.parent / p).resolve())
+            return str(p.resolve())
+
+        # Absolute: try it directly first
+        if p.exists():
+            return str(p.resolve())
+
+        # Absolute but not found on this machine: try just the filename
+        # next to the project file (covers cross-platform / moved projects)
+        if self._path is not None:
+            candidate = self._path.parent / p.name
+            if candidate.exists():
+                return str(candidate.resolve())
+
+        # No match found – return as-is so the UI can display "File not found"
+        return stored
+
+    def _make_portable(self, path: str) -> str:
+        """
+        Always store paths as forward-slash (POSIX/Unix) strings.
+
+        Tries to produce a path relative to the project file using walk_up so
+        that paths outside the project directory are expressed as ../../ style
+        relatives.  Falls back to an absolute POSIX path only when the project
+        is unsaved or a relative path is impossible (e.g. different Windows
+        drives).  Forward slashes are always used regardless of platform.
+        """
+        resolved = Path(path).resolve()
+        if self._path is not None:
+            try:
+                return resolved.relative_to(
+                    self._path.parent.resolve(), walk_up=True
+                ).as_posix()
+            except ValueError:
+                pass  # Different drive on Windows – fall through to absolute
+        return resolved.as_posix()
+
+    def _norm(self, path: str) -> Path:
+        """Resolved Path used only for duplicate detection."""
+        return Path(path).resolve()
+
+    # --- File list management ---
+
+    def _add_to(self, lst: list[str], path: str):
+        resolved = str(Path(path).resolve())
+        norm = self._norm(resolved)
+        if not any(self._norm(p) == norm for p in lst):
+            lst.append(resolved)
+            self._modified = True
+
+    def _remove_from(self, lst: list[str], path: str):
+        norm = self._norm(path)
+        for i, p in enumerate(lst):
+            if self._norm(p) == norm:
+                lst.pop(i)
+                self._modified = True
+                return
+
     def add_database_file(self, path: str):
-        norm = _norm(path)
-        if any(_norm(p) == norm for p in self._data.database_files):
-            return
-        self._data.database_files.append(str(norm))
-        self._modified = True
+        self._add_to(self._data.database_files, path)
 
     def remove_database_file(self, path: str):
-        norm = _norm(path)
-        for i, p in enumerate(self._data.database_files):
-            if _norm(p) == norm:
-                self._data.database_files.pop(i)
-                self._modified = True
-                return
+        self._remove_from(self._data.database_files, path)
 
     def add_trace_file(self, path: str):
-        norm = _norm(path)
-        if any(_norm(p) == norm for p in self._data.trace_files):
-            return
-        self._data.trace_files.append(str(norm))
-        self._modified = True
+        self._add_to(self._data.trace_files, path)
 
     def remove_trace_file(self, path: str):
-        norm = _norm(path)
-        for i, p in enumerate(self._data.trace_files):
-            if _norm(p) == norm:
-                self._data.trace_files.pop(i)
-                self._modified = True
-                return
+        self._remove_from(self._data.trace_files, path)
 
     def add_plot_file(self, path: str):
-        norm = _norm(path)
-        if any(_norm(p) == norm for p in self._data.plot_files):
-            return
-        self._data.plot_files.append(str(norm))
-        self._modified = True
+        self._add_to(self._data.plot_files, path)
 
     def remove_plot_file(self, path: str):
-        norm = _norm(path)
-        for i, p in enumerate(self._data.plot_files):
-            if _norm(p) == norm:
-                self._data.plot_files.pop(i)
-                self._modified = True
-                return
+        self._remove_from(self._data.plot_files, path)
 
     @property
     def trace_folder(self) -> Path | None:
@@ -114,40 +158,50 @@ class Project:
             return None
         return self._path.parent / "plot"
 
+    # --- Persistence ---
+
     def save(self, path: str | Path | None = None):
         if path is not None:
             self._path = Path(path)
         if self._path is None:
             raise ValueError("No path specified")
         self._data.name = self._path.stem
+        data = asdict(self._data)
+        # Store file lists as portable relative paths where possible
+        data["database_files"] = [self._make_portable(f)
+                                   for f in self._data.database_files]
+        data["trace_files"] = [self._make_portable(f)
+                                for f in self._data.trace_files]
+        data["plot_files"] = [self._make_portable(f)
+                               for f in self._data.plot_files]
         with open(self._path, "w") as f:
-            json.dump(asdict(self._data), f, indent=2)
+            json.dump(data, f, indent=2)
         self._modified = False
 
     def load(self, path: str | Path):
-        self._path = Path(path)
+        self._path = Path(path).resolve()
         with open(self._path) as f:
             raw = json.load(f)
-        # Normalize stored paths to absolute form (resolves separator differences)
-        def _norm_list(paths: list) -> list[str]:
-            result = []
+
+        def _load_paths(paths: list) -> list[str]:
+            result: list[str] = []
             seen: list[Path] = []
-            for p in paths:
+            for stored in paths:
+                resolved_str = self._resolve_stored_path(stored)
+                # Deduplicate by resolved form
                 try:
-                    resolved = _norm(p)
+                    resolved = Path(resolved_str).resolve()
                 except Exception:
-                    result.append(p)
-                    continue
-                # Deduplicate by resolved path
+                    resolved = Path(resolved_str)
                 if resolved not in seen:
                     seen.append(resolved)
-                    result.append(str(resolved))
+                    result.append(resolved_str)
             return result
 
         self._data = ProjectData(
             name=self._path.stem,
-            database_files=_norm_list(raw.get("database_files", [])),
-            trace_files=_norm_list(raw.get("trace_files", [])),
+            database_files=_load_paths(raw.get("database_files", [])),
+            trace_files=_load_paths(raw.get("trace_files", [])),
             watch_signals=raw.get("watch_signals", []),
             tx_messages=raw.get("tx_messages", []),
             connections=raw.get("connections", []),
@@ -156,7 +210,7 @@ class Project:
             rx_filters=raw.get("rx_filters", []),
             workspace_state=raw.get("workspace_state", ""),
             settings=raw.get("settings", {}),
-            plot_files=_norm_list(raw.get("plot_files", [])),
+            plot_files=_load_paths(raw.get("plot_files", [])),
             database_editor_file=raw.get("database_editor_file", ""),
         )
         self._modified = False

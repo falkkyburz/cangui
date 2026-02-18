@@ -1,11 +1,11 @@
 {
   "name": "fast",
   "database_files": [
-    "/home/falk/Work/cangui/test/test.dbc"
+    "test.dbc"
   ],
   "trace_files": [
-    "/home/falk/Work/cangui/test/trace/2026-02-18T19-37-24.trc",
-    "/home/falk/Work/cangui/test/trace/2026-02-18T19-56-00.trc"
+    "trace/2026-02-18T19-37-24.trc",
+    "trace/2026-02-18T19-56-00.trc"
   ],
   "watch_signals": [],
   "tx_messages": [

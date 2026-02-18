@@ -1,7 +1,7 @@
 {
   "name": "slow",
   "database_files": [
-    "/home/falk/Work/cangui/test/test.dbc"
+    "test.dbc"
   ],
   "trace_files": [],
   "watch_signals": [],
