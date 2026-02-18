@@ -1,3 +1,5 @@
+import sys
+
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QSplitter, QTabWidget, QApplication,
 )
@@ -464,10 +466,17 @@ class MainWindow(QMainWindow):
         # Remove existing connections in reverse order
         for i in range(len(self._can_service.connections) - 1, -1, -1):
             self._can_service.remove_connection(i)
+        _socketcan_ifaces = {"socketcan-virtual", "socketcan"}
         for cd in data.connections:
+            iface = cd.get("interface", "socketcan-virtual")
+            channel = cd.get("channel", "vcan0")
+            # Remap Linux-only SocketCAN interfaces to the cross-platform virtual bus
+            if sys.platform == "win32" and iface in _socketcan_ifaces:
+                iface = "virtual"
+                channel = ""
             config = BusConfig(
-                interface=cd.get("interface", "socketcan-virtual"),
-                channel=cd.get("channel", "vcan0"),
+                interface=iface,
+                channel=channel,
                 bitrate=cd.get("bitrate", 500000),
                 fd=cd.get("fd", False),
                 name=cd.get("name", ""),

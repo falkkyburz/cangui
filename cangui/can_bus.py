@@ -1,14 +1,17 @@
+import sys
 from dataclasses import dataclass
 
 import can
 
 from cangui.can_message import CanMessage
 
+_IS_WINDOWS = sys.platform == "win32"
+
 
 @dataclass
 class BusConfig:
-    interface: str = "socketcan-virtual"
-    channel: str = "vcan0"
+    interface: str = "virtual" if _IS_WINDOWS else "socketcan-virtual"
+    channel: str = "" if _IS_WINDOWS else "vcan0"
     bitrate: int = 500000
     fd: bool = False
     name: str = ""
@@ -16,7 +19,7 @@ class BusConfig:
 
     @property
     def is_virtual(self) -> bool:
-        return self.interface == "socketcan-virtual"
+        return self.interface in ("socketcan-virtual", "virtual")
 
     @property
     def can_interface(self) -> str:

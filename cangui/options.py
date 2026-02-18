@@ -1,4 +1,5 @@
 import json
+import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
@@ -38,7 +39,7 @@ class PlotOptions:
 @dataclass
 class ConnectionDefaults:
     default_bitrate: int = 500000
-    default_interface: str = "socketcan"
+    default_interface: str = "virtual" if sys.platform == "win32" else "socketcan"
 
 
 @dataclass

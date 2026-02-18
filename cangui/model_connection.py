@@ -1,18 +1,27 @@
+import sys
+
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
 from PySide6.QtWidgets import QStyledItemDelegate, QComboBox
 
 from cangui.can_bus import BusConfig
 from cangui.service_can import CanService
 
-INTERFACES = [
-    "socketcan-virtual", "socketcan", "pcan", "ixxat", "kvaser", "vector", "virtual",
-]
+_LINUX_INTERFACES = ["socketcan-virtual", "socketcan"]
+_ALL_INTERFACES = _LINUX_INTERFACES + ["pcan", "ixxat", "kvaser", "vector", "virtual"]
+
+# Hide Linux-only SocketCAN interfaces on Windows
+INTERFACES = (
+    [i for i in _ALL_INTERFACES if i not in _LINUX_INTERFACES]
+    if sys.platform == "win32"
+    else _ALL_INTERFACES
+)
 
 DEFAULT_CHANNELS = {
     "socketcan-virtual": "vcan0",
     "socketcan": "can0",
     "pcan": "PCAN_USBBUS1",
     "vector": "0",
+    "virtual": "",
 }
 
 BITRATES = [125000, 250000, 500000, 1000000]
@@ -160,9 +169,13 @@ class ConnectionModel(QAbstractTableModel):
 
     def add_empty_row(self):
         next_bus = len(self._service.connections) + 1
+        if sys.platform == "win32":
+            iface, channel = "virtual", ""
+        else:
+            iface, channel = "socketcan-virtual", "vcan0"
         config = BusConfig(
-            interface="socketcan-virtual",
-            channel="vcan0",
+            interface=iface,
+            channel=channel,
             bitrate=500000,
             bus_number=next_bus,
         )
