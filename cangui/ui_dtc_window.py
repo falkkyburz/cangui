@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, Signal
+from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, Signal, QTimer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QToolBar, QTableView, QHeaderView, QComboBox, QLabel,
 )
@@ -134,12 +134,20 @@ class DtcWindow(QWidget):
         )
         layout.addWidget(self._table)
 
+        self._model.rowsInserted.connect(lambda *_: self._resize_columns())
+        self._model.modelReset.connect(lambda *_: self._resize_columns())
+        QTimer.singleShot(0, self._resize_columns)
+
         # Status
         self._status_label = QLabel("")
         layout.addWidget(self._status_label)
 
         # Wire UDS responses
         self._uds.response_received.connect(self._on_response)
+
+    def _resize_columns(self):
+        for i in range(self._model.columnCount() - 1):
+            self._table.resizeColumnToContents(i)
 
     @property
     def primary_view(self):

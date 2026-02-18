@@ -223,12 +223,20 @@ class WatchDidWindow(QWidget):
         )
         layout.addWidget(self._table)
 
+        self._model.rowsInserted.connect(lambda *_: self._resize_columns())
+        self._model.modelReset.connect(lambda *_: self._resize_columns())
+        QTimer.singleShot(0, self._resize_columns)
+
         # Poll timer
         self._poll_timer = QTimer(self)
         self._poll_timer.timeout.connect(self._poll_next)
 
         # Wire UDS responses
         self._uds.response_received.connect(self._on_response)
+
+    def _resize_columns(self):
+        for i in range(len(COLUMNS) - 1):
+            self._table.resizeColumnToContents(i)
 
     @property
     def primary_view(self):

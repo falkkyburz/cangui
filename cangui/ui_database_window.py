@@ -3,7 +3,7 @@ from pathlib import Path
 
 import cantools
 
-from PySide6.QtCore import Qt, Signal, QModelIndex
+from PySide6.QtCore import Qt, Signal, QModelIndex, QTimer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QToolBar, QHeaderView,
     QFileDialog, QMessageBox, QStyledItemDelegate, QComboBox,
@@ -89,6 +89,16 @@ class DatabaseWindow(QWidget):
 
         toolbar.addSeparator()
 
+        up_action = QAction(_icon("up"), "Move Up", self)
+        up_action.triggered.connect(self._on_move_up)
+        toolbar.addAction(up_action)
+
+        down_action = QAction(_icon("down"), "Move Down", self)
+        down_action.triggered.connect(self._on_move_down)
+        toolbar.addAction(down_action)
+
+        toolbar.addSeparator()
+
         import_dbc = QAction(_icon("import"), "Import DBC", self)
         import_dbc.triggered.connect(self._on_import_dbc)
         toolbar.addAction(import_dbc)
@@ -139,6 +149,7 @@ class DatabaseWindow(QWidget):
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
 
         layout.addWidget(self._tree)
+        QTimer.singleShot(0, self._resize_columns)
 
     def _resize_columns(self):
         """Resize columns to sensible widths after data is loaded."""
@@ -201,6 +212,26 @@ class DatabaseWindow(QWidget):
         if not index.isValid():
             return
         self._model.remove_row(index)
+
+    def _on_move_up(self):
+        index = self._tree.currentIndex()
+        if not index.isValid():
+            return
+        row = index.row()
+        self._model.move_up(index)
+        parent = index.parent()
+        new_index = self._model.index(row - 1, 0, parent)
+        self._tree.setCurrentIndex(new_index)
+
+    def _on_move_down(self):
+        index = self._tree.currentIndex()
+        if not index.isValid():
+            return
+        row = index.row()
+        self._model.move_down(index)
+        parent = index.parent()
+        new_index = self._model.index(row + 1, 0, parent)
+        self._tree.setCurrentIndex(new_index)
 
     def _on_import_dbc(self):
         path, _ = QFileDialog.getOpenFileName(

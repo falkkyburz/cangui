@@ -469,6 +469,84 @@ class DatabaseModel(QAbstractItemModel):
         self.endInsertRows()
         return child_row
 
+    def move_up(self, index: QModelIndex):
+        """Move the selected item (file, message, or signal) one position up."""
+        if not index.isValid():
+            return
+        level = self._get_level(index)
+        row = index.row()
+
+        if level == 0:
+            if row <= 0 or row >= len(self._items):
+                return
+            self.beginMoveRows(QModelIndex(), row, row, QModelIndex(), row - 1)
+            self._items.insert(row - 1, self._items.pop(row))
+            self.endMoveRows()
+
+        elif level == 1:
+            file_row, _ = _decode_id(index.internalId())
+            if file_row < 0 or file_row >= len(self._items):
+                return
+            msgs = self._items[file_row].messages
+            if row <= 0 or row >= len(msgs):
+                return
+            parent_idx = self.index(file_row, 0)
+            self.beginMoveRows(parent_idx, row, row, parent_idx, row - 1)
+            msgs.insert(row - 1, msgs.pop(row))
+            self.endMoveRows()
+
+        else:  # signal level
+            file_row, msg_row = _decode_id(index.internalId())
+            if file_row < 0 or msg_row < 0:
+                return
+            sigs = self._items[file_row].messages[msg_row].signals
+            if row <= 0 or row >= len(sigs):
+                return
+            file_idx = self.index(file_row, 0)
+            msg_idx = self.index(msg_row, 0, file_idx)
+            self.beginMoveRows(msg_idx, row, row, msg_idx, row - 1)
+            sigs.insert(row - 1, sigs.pop(row))
+            self.endMoveRows()
+
+    def move_down(self, index: QModelIndex):
+        """Move the selected item (file, message, or signal) one position down."""
+        if not index.isValid():
+            return
+        level = self._get_level(index)
+        row = index.row()
+
+        if level == 0:
+            if row < 0 or row >= len(self._items) - 1:
+                return
+            self.beginMoveRows(QModelIndex(), row, row, QModelIndex(), row + 2)
+            self._items.insert(row + 1, self._items.pop(row))
+            self.endMoveRows()
+
+        elif level == 1:
+            file_row, _ = _decode_id(index.internalId())
+            if file_row < 0 or file_row >= len(self._items):
+                return
+            msgs = self._items[file_row].messages
+            if row < 0 or row >= len(msgs) - 1:
+                return
+            parent_idx = self.index(file_row, 0)
+            self.beginMoveRows(parent_idx, row, row, parent_idx, row + 2)
+            msgs.insert(row + 1, msgs.pop(row))
+            self.endMoveRows()
+
+        else:  # signal level
+            file_row, msg_row = _decode_id(index.internalId())
+            if file_row < 0 or msg_row < 0:
+                return
+            sigs = self._items[file_row].messages[msg_row].signals
+            if row < 0 or row >= len(sigs) - 1:
+                return
+            file_idx = self.index(file_row, 0)
+            msg_idx = self.index(msg_row, 0, file_idx)
+            self.beginMoveRows(msg_idx, row, row, msg_idx, row + 2)
+            sigs.insert(row + 1, sigs.pop(row))
+            self.endMoveRows()
+
     def remove_row(self, index: QModelIndex):
         if not index.isValid():
             return

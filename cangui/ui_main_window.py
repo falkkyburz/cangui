@@ -198,6 +198,7 @@ class MainWindow(QMainWindow):
         self._settings_win.setting_changed.connect(self._on_setting_changed)
 
         self._plot_list_win = PlotListWindow()
+        self._plot_list_win.set_decoder(self._decoder)
         self._plot_list_win.signal_added.connect(self._plot_win.add_signal_curve)
         self._plot_list_win.signal_removed.connect(self._plot_win.remove_signal_curve)
         self._plot_list_win.signal_settings_changed.connect(self._plot_win.update_curve_style)
@@ -206,6 +207,8 @@ class MainWindow(QMainWindow):
             lambda arb_id, *_: self._plot_trace_service.add_arb_id(arb_id))
         self._plot_list_win.signal_removed.connect(
             lambda arb_id, _: self._plot_trace_service.remove_arb_id(arb_id))
+        self._dispatcher.messages_received.connect(self._plot_list_win.on_messages)
+        self._dispatcher.message_received.connect(self._plot_list_win.on_message)
 
         self._database_win = DatabaseWindow()
         self._database_win.dbc_imported.connect(self._on_dbc_imported)

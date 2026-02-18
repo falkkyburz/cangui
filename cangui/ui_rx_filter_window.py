@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (
     QHeaderView, QToolBar, QComboBox, QStyledItemDelegate,
 )
 from PySide6.QtGui import QAction
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 from cangui.model_rx_filter import RxFilterModel, FilterAction
 from cangui.ui_base_dock_window import BaseDockWindow
@@ -73,6 +73,14 @@ class RxFilterWindow(BaseDockWindow):
         )
         self._view.setItemDelegateForColumn(1, ActionDelegate(self._view))
         self._layout.addWidget(self._view)
+
+        self._model.rowsInserted.connect(lambda *_: self._resize_columns())
+        self._model.modelReset.connect(lambda *_: self._resize_columns())
+        QTimer.singleShot(0, self._resize_columns)
+
+    def _resize_columns(self):
+        for i in range(self._model.columnCount() - 1):
+            self._view.resizeColumnToContents(i)
 
     @property
     def primary_view(self):

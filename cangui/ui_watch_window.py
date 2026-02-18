@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import QHeaderView, QTreeView, QToolBar
 from PySide6.QtGui import QAction
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, QTimer
 
 from cangui.model_watch import WatchModel
 from cangui.ui_base_dock_window import BaseDockWindow
@@ -55,6 +55,10 @@ class WatchWindow(BaseDockWindow):
         self._view.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
         self._layout.addWidget(self._view)
 
+        self._model.rowsInserted.connect(lambda *_: self._resize_columns())
+        self._model.modelReset.connect(lambda *_: self._resize_columns())
+        QTimer.singleShot(0, self._resize_columns)
+
     @property
     def primary_view(self):
         return self._view
@@ -79,6 +83,10 @@ class WatchWindow(BaseDockWindow):
         row = index.row()
         self._model.move_down(row)
         self._view.setCurrentIndex(self._model.index(row + 1, 0))
+
+    def _resize_columns(self):
+        for i in range(self._model.columnCount() - 1):
+            self._view.resizeColumnToContents(i)
 
     def _on_add_to_plot(self):
         index = self._view.currentIndex()
