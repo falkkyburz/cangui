@@ -501,6 +501,24 @@ class DatabaseModel(QAbstractItemModel):
                         sigs.pop(index.row())
                         self.endRemoveRows()
 
+    def remove_by_source_path(self, path: str) -> bool:
+        """Remove the file-level item whose source_path matches path. Returns True if removed."""
+        from pathlib import Path as _Path
+        try:
+            norm = _Path(path).resolve()
+        except Exception:
+            norm = _Path(path)
+        for row, item in enumerate(self._items):
+            try:
+                item_norm = _Path(item.source_path).resolve()
+            except Exception:
+                item_norm = _Path(item.source_path)
+            if item_norm == norm:
+                idx = self.index(row, 0)
+                self.remove_row(idx)
+                return True
+        return False
+
     def get_message_row(self, index: QModelIndex) -> tuple[int, int]:
         """Return (file_row, msg_row) for any index. Returns (-1, -1) if not found."""
         if not index.isValid():

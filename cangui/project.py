@@ -3,6 +3,11 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
 
+def _norm(path: str) -> Path:
+    """Return a resolved, absolute Path for comparison (handles separator differences)."""
+    return Path(path).resolve()
+
+
 @dataclass
 class ProjectData:
     name: str = "Untitled"
@@ -51,19 +56,49 @@ class Project:
         self._modified = True
 
     def add_database_file(self, path: str):
-        if path not in self._data.database_files:
-            self._data.database_files.append(path)
-            self._modified = True
+        norm = _norm(path)
+        if any(_norm(p) == norm for p in self._data.database_files):
+            return
+        self._data.database_files.append(str(norm))
+        self._modified = True
 
     def remove_database_file(self, path: str):
-        if path in self._data.database_files:
-            self._data.database_files.remove(path)
-            self._modified = True
+        norm = _norm(path)
+        for i, p in enumerate(self._data.database_files):
+            if _norm(p) == norm:
+                self._data.database_files.pop(i)
+                self._modified = True
+                return
 
     def add_trace_file(self, path: str):
-        if path not in self._data.trace_files:
-            self._data.trace_files.append(path)
-            self._modified = True
+        norm = _norm(path)
+        if any(_norm(p) == norm for p in self._data.trace_files):
+            return
+        self._data.trace_files.append(str(norm))
+        self._modified = True
+
+    def remove_trace_file(self, path: str):
+        norm = _norm(path)
+        for i, p in enumerate(self._data.trace_files):
+            if _norm(p) == norm:
+                self._data.trace_files.pop(i)
+                self._modified = True
+                return
+
+    def add_plot_file(self, path: str):
+        norm = _norm(path)
+        if any(_norm(p) == norm for p in self._data.plot_files):
+            return
+        self._data.plot_files.append(str(norm))
+        self._modified = True
+
+    def remove_plot_file(self, path: str):
+        norm = _norm(path)
+        for i, p in enumerate(self._data.plot_files):
+            if _norm(p) == norm:
+                self._data.plot_files.pop(i)
+                self._modified = True
+                return
 
     @property
     def trace_folder(self) -> Path | None:
@@ -93,10 +128,26 @@ class Project:
         self._path = Path(path)
         with open(self._path) as f:
             raw = json.load(f)
+        # Normalize stored paths to absolute form (resolves separator differences)
+        def _norm_list(paths: list) -> list[str]:
+            result = []
+            seen: list[Path] = []
+            for p in paths:
+                try:
+                    resolved = _norm(p)
+                except Exception:
+                    result.append(p)
+                    continue
+                # Deduplicate by resolved path
+                if resolved not in seen:
+                    seen.append(resolved)
+                    result.append(str(resolved))
+            return result
+
         self._data = ProjectData(
             name=self._path.stem,
-            database_files=raw.get("database_files", []),
-            trace_files=raw.get("trace_files", []),
+            database_files=_norm_list(raw.get("database_files", [])),
+            trace_files=_norm_list(raw.get("trace_files", [])),
             watch_signals=raw.get("watch_signals", []),
             tx_messages=raw.get("tx_messages", []),
             connections=raw.get("connections", []),
@@ -105,7 +156,7 @@ class Project:
             rx_filters=raw.get("rx_filters", []),
             workspace_state=raw.get("workspace_state", ""),
             settings=raw.get("settings", {}),
-            plot_files=raw.get("plot_files", []),
+            plot_files=_norm_list(raw.get("plot_files", [])),
             database_editor_file=raw.get("database_editor_file", ""),
         )
         self._modified = False

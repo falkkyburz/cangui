@@ -1,15 +1,17 @@
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QAbstractItemModel, QModelIndex, QTimer
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QColor, QIcon
 
 from cangui.project import Project
 
 
 class ProjectNode:
-    def __init__(self, name: str, path: str = "", parent: "ProjectNode | None" = None):
+    def __init__(self, name: str, path: str = "", category: str = "",
+                 parent: "ProjectNode | None" = None):
         self.name = name
         self.path = path
+        self.category = category  # "db", "trace", "plot", or "" for group/root nodes
         self.parent = parent
         self.children: list[ProjectNode] = []
 
@@ -52,7 +54,7 @@ class ProjectModel(QAbstractItemModel):
             db_group = ProjectNode("Databases")
             proj_node.add_child(db_group)
             for f in self._project.data.database_files:
-                db_group.add_child(ProjectNode(Path(f).name, path=f))
+                db_group.add_child(ProjectNode(Path(f).name, path=f, category="db"))
             if has_db_editor:
                 db_editor_path = str(self._project.path.parent
                                      / self._project.data.database_editor_file)
@@ -65,14 +67,14 @@ class ProjectModel(QAbstractItemModel):
             trace_group = ProjectNode("Traces")
             proj_node.add_child(trace_group)
             for f in self._project.data.trace_files:
-                trace_group.add_child(ProjectNode(Path(f).name, path=f))
+                trace_group.add_child(ProjectNode(Path(f).name, path=f, category="trace"))
 
         # Plot trace files
         if self._project.data.plot_files:
             plot_group = ProjectNode("Plot Traces")
             proj_node.add_child(plot_group)
             for f in self._project.data.plot_files:
-                plot_group.add_child(ProjectNode(Path(f).name, path=f))
+                plot_group.add_child(ProjectNode(Path(f).name, path=f, category="plot"))
 
         self.endResetModel()
 
@@ -105,7 +107,7 @@ class ProjectModel(QAbstractItemModel):
         return len(node.children)
 
     def columnCount(self, parent=QModelIndex()):
-        return 2
+        return 3
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
@@ -113,6 +115,8 @@ class ProjectModel(QAbstractItemModel):
                 return "Name"
             if section == 1:
                 return "Size"
+            if section == 2:
+                return "Status"
         return None
 
     @staticmethod
@@ -129,30 +133,41 @@ class ProjectModel(QAbstractItemModel):
         if not index.isValid():
             return None
         node = index.internalPointer()
+        col = index.column()
+
         if role == Qt.ItemDataRole.DisplayRole:
-            if index.column() == 0:
+            if col == 0:
                 return node.name
-            if index.column() == 1 and node.path:
+            if col == 1 and node.path:
                 p = Path(node.path)
                 if p.is_file():
                     return self._format_size(p.stat().st_size)
+            if col == 2 and node.path:
+                if not Path(node.path).is_file():
+                    return "File not found"
+
+        if role == Qt.ItemDataRole.ForegroundRole:
+            if col == 2 and node.path and not Path(node.path).is_file():
+                return QColor("#C62828")
+
         return None
 
     def flags(self, index: QModelIndex):
         return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
 
     def _refresh_sizes(self):
-        """Emit dataChanged for the size column so file sizes update."""
-        self._emit_size_changed(self._root, QModelIndex())
+        """Emit dataChanged for the size and status columns so they update."""
+        self._emit_column_changed(self._root, QModelIndex())
 
-    def _emit_size_changed(self, node: ProjectNode, parent: QModelIndex):
+    def _emit_column_changed(self, node: ProjectNode, parent: QModelIndex):
         for row, child in enumerate(node.children):
             if child.path:
-                idx = self.index(row, 1, parent)
-                self.dataChanged.emit(idx, idx)
+                for col in (1, 2):
+                    idx = self.index(row, col, parent)
+                    self.dataChanged.emit(idx, idx)
             if child.children:
                 child_parent = self.index(row, 0, parent)
-                self._emit_size_changed(child, child_parent)
+                self._emit_column_changed(child, child_parent)
 
     def get_node(self, index: QModelIndex) -> ProjectNode | None:
         if index.isValid():

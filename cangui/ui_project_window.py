@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QTreeView, QToolBar
+from PySide6.QtWidgets import QTreeView, QToolBar, QHeaderView
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Signal
 
@@ -14,6 +14,7 @@ class ProjectWindow(BaseDockWindow):
     load_requested = Signal()
     save_requested = Signal()
     save_as_requested = Signal()
+    file_remove_requested = Signal(str, str)  # (path, category)
 
     def __init__(self, model: ProjectModel, parent=None):
         super().__init__(parent)
@@ -38,15 +39,34 @@ class ProjectWindow(BaseDockWindow):
         save_as_action.triggered.connect(self.save_as_requested)
         toolbar.addAction(save_as_action)
 
+        toolbar.addSeparator()
+
+        remove_action = QAction(_icon("trash"), "Remove File", self)
+        remove_action.setToolTip("Remove selected file from project")
+        remove_action.triggered.connect(self._remove_selected)
+        toolbar.addAction(remove_action)
+
         self._layout.addWidget(toolbar)
 
         self._view = QTreeView()
         self._view.setModel(self._model)
-        self._view.header().setStretchLastSection(False)
-        self._view.header().resizeSection(0, 200)
-        self._view.header().resizeSection(1, 70)
+
+        header = self._view.header()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.resizeSection(0, 200)
+        header.resizeSection(1, 70)
+
         self._view.expandAll()
         self._layout.addWidget(self._view)
+
+    def _remove_selected(self):
+        idx = self._view.currentIndex()
+        node = self._model.get_node(idx)
+        if node and node.path and node.category:
+            self.file_remove_requested.emit(node.path, node.category)
 
     @property
     def primary_view(self):

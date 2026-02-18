@@ -182,6 +182,7 @@ class MainWindow(QMainWindow):
         self._project_win.load_requested.connect(self._open_project)
         self._project_win.save_requested.connect(self._save_project)
         self._project_win.save_as_requested.connect(self._save_project_as)
+        self._project_win.file_remove_requested.connect(self._remove_project_file)
 
         self._watch_win = WatchWindow(self._watch_model)
         self._watch_win.add_to_plot_requested.connect(self._add_signal_to_plot)
@@ -361,6 +362,23 @@ class MainWindow(QMainWindow):
         self._project_win.refresh()
         self._rx_model.refresh_symbols()
         self._tx_model.refresh_signals()
+
+    def _remove_project_file(self, path: str, category: str):
+        """Remove a file from the project and unload it from active managers."""
+        if category == "db":
+            self._project.remove_database_file(path)
+            try:
+                self._db_manager.remove_file(path)
+            except Exception:
+                pass
+            self._database_win.remove_dbc(path)
+            self._rx_model.refresh_symbols()
+            self._tx_model.refresh_signals()
+        elif category == "trace":
+            self._project.remove_trace_file(path)
+        elif category == "plot":
+            self._project.remove_plot_file(path)
+        self._project_win.refresh()
 
     # -- Project management --
 
@@ -722,9 +740,8 @@ class MainWindow(QMainWindow):
 
     def _on_plot_trace_file_changed(self, path: str):
         if path:
-            if path not in self._project.data.plot_files:
-                self._project.data.plot_files.append(path)
-                self._project_win.refresh()
+            self._project.add_plot_file(path)
+            self._project_win.refresh()
 
     def _add_signal_to_plot(self, arb_id: int, signal_name: str, unit: str):
         self._plot_list_win.add_signal(arb_id, signal_name, unit)

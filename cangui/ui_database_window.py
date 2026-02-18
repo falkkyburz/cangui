@@ -260,6 +260,10 @@ class DatabaseWindow(QWidget):
         self._model.import_from_cantools(db, filename=filename,
                                          source_path=path, append=True)
 
+    def remove_dbc(self, path: str):
+        """Remove the file-level database entry matching path."""
+        self._model.remove_by_source_path(path)
+
     def export_dbc(self) -> str:
         db = self._model.export_to_cantools()
         return db.as_dbc_string()
