@@ -206,7 +206,16 @@ QComboBox:focus {
 }
 QComboBox::drop-down {
     border: none;
+    border-left: 1px solid #C4C5C9;
     width: 18px;
+}
+QComboBox::down-arrow {
+    image: url(__CANGUI_DOWN_ARROW__);
+    width: 10px;
+    height: 6px;
+}
+QComboBox::down-arrow:disabled {
+    image: url(__CANGUI_DOWN_ARROW_DIM__);
 }
 QComboBox QAbstractItemView {
     background-color: #FFFFFF;
