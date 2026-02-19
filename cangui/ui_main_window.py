@@ -74,6 +74,7 @@ class MainWindow(QMainWindow):
         self._plot_service.max_display_points = self._options.plot.max_display_points
         self._plot_trace_service = PlotTraceService(self)
         self._plot_trace_service.file_changed.connect(self._on_plot_trace_file_changed)
+        self._plot_recording = False
         self._uds_service = UdsService(self)
 
         # Models
@@ -183,6 +184,7 @@ class MainWindow(QMainWindow):
 
         self._plot_win = PlotWindow(self._plot_service)
         self._plot_win.record_toggled.connect(self._on_plot_record_toggled)
+        self._plot_trace_service.file_changed.connect(self._plot_win.set_active_file)
 
         self._trace_win = TraceWindow(self._trace_model)
         self._trace_win.save_trace_requested.connect(self._save_trace)
@@ -223,6 +225,7 @@ class MainWindow(QMainWindow):
         self._plot_list_win.all_cleared.connect(self._plot_win.clear_all_curves)
         self._plot_list_win.signal_added.connect(
             lambda arb_id, *_: self._plot_trace_service.add_arb_id(arb_id))
+        self._plot_list_win.signal_added.connect(lambda *_: self._auto_start_plot())
         self._plot_list_win.signal_removed.connect(
             lambda arb_id, _: self._plot_trace_service.remove_arb_id(arb_id))
         self._dispatcher.messages_received.connect(self._plot_list_win.on_messages)
@@ -838,11 +841,26 @@ class MainWindow(QMainWindow):
 
     def _on_plot_record_toggled(self, recording: bool):
         if recording:
+            if self._project.path is None:
+                self._log_win.append(
+                    "ERROR",
+                    "Plot recording cannot start: project is not saved. Save first (Ctrl+S).")
+                self._plot_win.set_recording_state(False)
+                return
+            self._plot_service.start()
             self._plot_trace_service.set_trace_folder(self._project.plot_folder)
             self._plot_trace_service.set_trace_format(self._options.tracer.trace_format)
             self._plot_trace_service.start()
         else:
+            self._plot_service.stop()
             self._plot_trace_service.stop()
+        self._plot_recording = recording
+        self._plot_win.set_recording_state(recording)
+
+    def _auto_start_plot(self):
+        """Start plot recording automatically when the first signal is added."""
+        if not self._plot_recording:
+            self._on_plot_record_toggled(True)
 
     def _on_plot_trace_file_changed(self, path: str):
         if path:

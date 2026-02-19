@@ -65,21 +65,19 @@ def lttb_downsample(x: np.ndarray, y: np.ndarray, n: int) -> tuple[np.ndarray, n
 
 
 class SignalBuffer:
-    """Stores all raw samples and produces display-ready downsampled views.
+    """Rolling time-window buffer for a single signal.
 
-    Raw data is kept indefinitely (like the trace log).  Display data is a
-    rolling time-window slice, downsampled with LTTB, and only recomputed
-    when new samples have arrived since the last render call.
+    Samples are trimmed to the configured time window every flush cycle
+    (50 ms).  Display data is LTTB-downsampled and only recomputed when new
+    samples have arrived since the last render call.
     """
 
     def __init__(self, arb_id: int, signal_name: str, unit: str = ""):
         self.arb_id = arb_id
         self.signal_name = signal_name
         self.unit = unit
-        # All samples, never trimmed — O(1) appends via Python list
         self._times: list[float] = []
         self._values: list[float] = []
-        # Set whenever new data arrives; cleared by consume_display_data()
         self._dirty = False
 
     def append(self, t: float, value: float):
@@ -87,14 +85,24 @@ class SignalBuffer:
         self._values.append(value)
         self._dirty = True
 
+    def trim(self, time_window: float):
+        """Drop samples older than *time_window* seconds from the front."""
+        if not self._times:
+            return
+        cutoff = self._times[-1] - time_window
+        idx = bisect.bisect_left(self._times, cutoff)
+        if idx > 0:
+            del self._times[:idx]
+            del self._values[:idx]
+
     def consume_display_data(
         self, time_window: float, max_points: int
     ) -> tuple[np.ndarray, np.ndarray] | None:
         """Return display arrays only if new data arrived since the last call.
 
         Returns None when nothing has changed so the caller can skip setData().
-        The arrays cover the rolling *time_window* and contain at most
-        *max_points* points (LTTB-downsampled).  All raw samples are retained.
+        Trim already keeps the list bounded to *time_window*; this method just
+        converts to numpy and LTTB-downsamples to at most *max_points* points.
         """
         if not self._dirty:
             return None
@@ -103,11 +111,8 @@ class SignalBuffer:
         if not self._times:
             return np.empty(0, np.float64), np.empty(0, np.float64)
 
-        t_end = self._times[-1]
-        start_idx = bisect.bisect_left(self._times, t_end - time_window)
-
-        times = np.array(self._times[start_idx:], dtype=np.float64)
-        values = np.array(self._values[start_idx:], dtype=np.float64)
+        times = np.array(self._times, dtype=np.float64)
+        values = np.array(self._values, dtype=np.float64)
 
         if len(times) > max_points:
             times, values = lttb_downsample(times, values, max_points)
@@ -135,6 +140,7 @@ class PlotDataService(QObject):
         self._max_display_points = MAX_DISPLAY_POINTS
         self._start_time: float | None = None
         self._pending: list[CanMessage] = []
+        self._active = False
 
         self._batch_timer = QTimer(self)
         self._batch_timer.setInterval(50)
@@ -171,6 +177,19 @@ class PlotDataService(QObject):
         if key not in self._buffers:
             self._buffers[key] = SignalBuffer(arb_id=arb_id, signal_name=signal_name, unit=unit)
 
+    def start(self):
+        """Clear all display buffers, reset the time origin, and begin accepting messages."""
+        self._active = True
+        for buf in self._buffers.values():
+            buf.clear()
+        self._pending.clear()
+        self._start_time = None
+
+    def stop(self):
+        """Stop accepting new messages so the display freezes."""
+        self._active = False
+        self._pending.clear()
+
     def remove_signal(self, arb_id: int, signal_name: str):
         self._buffers.pop((arb_id, signal_name), None)
 
@@ -188,11 +207,15 @@ class PlotDataService(QObject):
 
     def on_message(self, msg: CanMessage):
         """Queue a single message for processing."""
+        if not self._active:
+            return
         if any(k[0] == msg.arbitration_id for k in self._buffers):
             self._pending.append(msg)
 
     def on_messages(self, messages: list[CanMessage]):
         """Queue a batch of messages for processing."""
+        if not self._active:
+            return
         watched_ids = {k[0] for k in self._buffers}
         if not watched_ids:
             return
@@ -227,6 +250,10 @@ class PlotDataService(QObject):
                 except (TypeError, ValueError):
                     continue
                 buf.append(t, value)
+
+        for buf in self._buffers.values():
+            if buf._times:
+                buf.trim(self._time_window)
 
     def clear(self):
         for buf in self._buffers.values():

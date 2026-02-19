@@ -57,11 +57,20 @@ class PlotWindow(QWidget):
 
         toolbar.addSeparator()
 
-        # Record plot trace button
-        self._record_action = QAction(_icon("record"), "Record Plot Trace", self)
-        self._record_action.setCheckable(True)
-        self._record_action.toggled.connect(self.record_toggled)
-        toolbar.addAction(self._record_action)
+        self._start_action = QAction(_icon("record"), "Start", self)
+        self._start_action.triggered.connect(self._on_start)
+        toolbar.addAction(self._start_action)
+
+        self._stop_action = QAction(_icon("stop"), "Stop", self)
+        self._stop_action.setEnabled(False)
+        self._stop_action.triggered.connect(self._on_stop)
+        toolbar.addAction(self._stop_action)
+
+        toolbar.addSeparator()
+
+        self._file_label = QLabel("")
+        self._file_label.setStyleSheet("color: gray; padding: 0 4px;")
+        toolbar.addWidget(self._file_label)
 
         layout.addWidget(toolbar)
 
@@ -165,6 +174,25 @@ class PlotWindow(QWidget):
             self._plot_widget.enableAutoRange()
         else:
             self._plot_widget.disableAutoRange()
+
+    def _on_start(self):
+        self.record_toggled.emit(True)
+
+    def _on_stop(self):
+        self.record_toggled.emit(False)
+
+    def set_recording_state(self, recording: bool):
+        self._start_action.setEnabled(not recording)
+        self._stop_action.setEnabled(recording)
+
+    def set_active_file(self, path: str):
+        if path:
+            from pathlib import Path
+            self._file_label.setText(Path(path).name)
+            self._file_label.setToolTip(path)
+        else:
+            self._file_label.setText("")
+            self._file_label.setToolTip("")
 
     def _update_plot(self):
         any_updated = False

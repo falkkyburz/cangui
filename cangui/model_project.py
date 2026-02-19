@@ -44,7 +44,10 @@ class ProjectModel(QAbstractItemModel):
     def _rebuild(self):
         self.beginResetModel()
         self._root = ProjectNode("root")
-        proj_node = ProjectNode(self._project.name)
+        proj_node = ProjectNode(
+            self._project.name,
+            path=str(self._project.path) if self._project.path else "",
+        )
         self._root.add_child(proj_node)
 
         # Database files
@@ -151,6 +154,9 @@ class ProjectModel(QAbstractItemModel):
 
         if role == Qt.ItemDataRole.DisplayRole:
             if col == 0:
+                # Show filename with extension for the project node
+                if node.path and node.parent is self._root:
+                    return Path(node.path).name
                 return node.name
             if col == 1 and node.path:
                 p = Path(node.path)

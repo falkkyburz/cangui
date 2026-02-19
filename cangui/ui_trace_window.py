@@ -69,6 +69,12 @@ class TraceWindow(QWidget):
         self._speed_combo.setCurrentIndex(1)
         toolbar.addWidget(self._speed_combo)
 
+        toolbar.addSeparator()
+
+        self._file_label = QLabel("")
+        self._file_label.setStyleSheet("color: gray; padding: 0 4px;")
+        toolbar.addWidget(self._file_label)
+
         layout.addWidget(toolbar)
 
         # Filter bar
@@ -98,11 +104,6 @@ class TraceWindow(QWidget):
         self._model.entries_committed.connect(self._on_entries_committed)
         self._model.modelReset.connect(self._on_model_reset)
         self._model.file_changed.connect(self._on_file_changed)
-
-        # File label
-        self._file_label = QLabel("")
-        self._file_label.setStyleSheet("color: gray; padding: 0 4px;")
-        layout.addWidget(self._file_label)
 
         # Status bar
         self._status_layout = QHBoxLayout()
@@ -185,9 +186,12 @@ class TraceWindow(QWidget):
 
     def _on_file_changed(self, path: str):
         if path:
-            self._file_label.setText(path)
+            from pathlib import Path
+            self._file_label.setText(Path(path).name)
+            self._file_label.setToolTip(path)
         else:
             self._file_label.setText("")
+            self._file_label.setToolTip("")
 
     def _on_rate_updated(self, rate: int):
         if rate > 0:

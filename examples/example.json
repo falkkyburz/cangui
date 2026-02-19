@@ -4,7 +4,7 @@
     "example.dbc"
   ],
   "trace_files": [
-    "trace/2026-02-19T20-44-37.trc"
+    "trace/2026-02-19T21-38-09.trc"
   ],
   "watch_signals": [
     {
@@ -779,7 +779,7 @@
       "symbol": "BitMatrix",
       "raw_data": "0000000000000000",
       "cycle_time_ms": 1,
-      "cycle_enabled": false
+      "cycle_enabled": true
     },
     {
       "bus": 1,
@@ -789,7 +789,7 @@
       "symbol": "BitMatrix",
       "raw_data": "0000000000000000",
       "cycle_time_ms": 1,
-      "cycle_enabled": false
+      "cycle_enabled": true
     },
     {
       "bus": 1,
@@ -799,7 +799,7 @@
       "symbol": "BitMatrix",
       "raw_data": "0000000000000000",
       "cycle_time_ms": 1,
-      "cycle_enabled": false
+      "cycle_enabled": true
     },
     {
       "bus": 1,
@@ -809,7 +809,7 @@
       "symbol": "BitMatrix",
       "raw_data": "0000000000000000",
       "cycle_time_ms": 1,
-      "cycle_enabled": false
+      "cycle_enabled": true
     },
     {
       "bus": 1,
@@ -819,7 +819,7 @@
       "symbol": "BitMatrix",
       "raw_data": "0000000000000000",
       "cycle_time_ms": 1,
-      "cycle_enabled": false
+      "cycle_enabled": true
     },
     {
       "bus": 1,
@@ -829,7 +829,7 @@
       "symbol": "BitMatrix",
       "raw_data": "0000000000000000",
       "cycle_time_ms": 1,
-      "cycle_enabled": false
+      "cycle_enabled": true
     },
     {
       "bus": 1,
@@ -839,7 +839,7 @@
       "symbol": "BitMatrix",
       "raw_data": "0000000000000000",
       "cycle_time_ms": 1,
-      "cycle_enabled": false
+      "cycle_enabled": true
     },
     {
       "bus": 1,
@@ -849,7 +849,7 @@
       "symbol": "BitMatrix",
       "raw_data": "0000000000000000",
       "cycle_time_ms": 1,
-      "cycle_enabled": false
+      "cycle_enabled": true
     },
     {
       "bus": 1,
@@ -859,7 +859,7 @@
       "symbol": "BitMatrix",
       "raw_data": "0000000000000000",
       "cycle_time_ms": 1,
-      "cycle_enabled": false
+      "cycle_enabled": true
     },
     {
       "bus": 1,
@@ -869,7 +869,7 @@
       "symbol": "BitMatrix",
       "raw_data": "0000000000000000",
       "cycle_time_ms": 1,
-      "cycle_enabled": false
+      "cycle_enabled": true
     }
   ],
   "connections": [
@@ -880,6 +880,14 @@
       "fd": false,
       "name": "",
       "bus_number": 1
+    },
+    {
+      "interface": "pcan",
+      "channel": "PCAN_USBBUS1",
+      "bitrate": 500000,
+      "fd": false,
+      "name": "",
+      "bus_number": 2
     }
   ],
   "watch_dids": [],
@@ -902,7 +910,7 @@
       "name": "Extended"
     }
   ],
-  "workspace_state": "{\"h_splitter\": [902, 435], \"v_splitter\": [308, 718], \"rxtx_splitter\": [474, 311, 161], \"main_tabs\": {\"order\": [\"Receive/Transmit [1]\", \"Database [D]\", \"Trace [2]\", \"Plot [3]\", \"Diagnostics [4]\"], \"current\": 2}, \"small_tabs\": {\"order\": [\"Project Manager [5]\"], \"current\": 0}, \"list_tabs\": {\"order\": [\"Watch [6]\", \"Watch DID [7]\", \"DTC [8]\", \"Rx Filter [9]\", \"Plot List [B]\", \"Settings [A]\", \"Help [0]\"], \"current\": 0}}",
+  "workspace_state": "{\"h_splitter\": [970, 467], \"v_splitter\": [386, 640], \"rxtx_splitter\": [201, 585, 160], \"main_tabs\": {\"order\": [\"Receive/Transmit [1]\", \"Database [D]\", \"Trace [2]\", \"Plot [3]\", \"Diagnostics [4]\"], \"current\": 0}, \"small_tabs\": {\"order\": [\"Project Manager [5]\", \"Log [L]\"], \"current\": 0}, \"list_tabs\": {\"order\": [\"Watch [6]\", \"Watch DID [7]\", \"DTC [8]\", \"Rx Filter [9]\", \"Plot List [B]\", \"Settings [A]\", \"Help [0]\"], \"current\": 4}}",
   "settings": {
     "general": {
       "float_format": "f",
@@ -932,10 +940,13 @@
       "rx_filter": true,
       "plot_list": true,
       "settings": true,
-      "help": true
+      "help": true,
+      "log": true
     }
   },
-  "plot_files": [],
+  "plot_files": [
+    "plot/2026-02-19T21-39-07.trc"
+  ],
   "database_editor_file": "",
   "script_plugin_file": "E2E.script.py",
   "seedkey_file": "Seedkey.seedkey.py"

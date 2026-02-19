@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QTreeView, QToolBar, QHeaderView, QFileDialog
+from PySide6.QtWidgets import QApplication, QTreeView, QToolBar, QHeaderView, QFileDialog
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Signal
 
@@ -57,6 +57,11 @@ class ProjectWindow(BaseDockWindow):
         remove_action.triggered.connect(self._remove_selected)
         toolbar.addAction(remove_action)
 
+        copy_path_action = QAction(_icon("copy"), "Copy Path", self)
+        copy_path_action.setToolTip("Copy full path of selected file to clipboard")
+        copy_path_action.triggered.connect(self._copy_path)
+        toolbar.addAction(copy_path_action)
+
         self._layout.addWidget(toolbar)
 
         self._view = QTreeView()
@@ -71,7 +76,12 @@ class ProjectWindow(BaseDockWindow):
         header.resizeSection(1, 70)
 
         self._view.expandAll()
+        self._view.collapsed.connect(self._prevent_collapse)
         self._layout.addWidget(self._view)
+
+    def _prevent_collapse(self, index):
+        if not index.parent().isValid():
+            self._view.expand(index)
 
     def _browse_import(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -92,6 +102,12 @@ class ProjectWindow(BaseDockWindow):
         node = self._model.get_node(idx)
         if node and node.path and node.category:
             self.file_remove_requested.emit(node.path, node.category)
+
+    def _copy_path(self):
+        idx = self._view.currentIndex()
+        node = self._model.get_node(idx)
+        if node and node.path:
+            QApplication.clipboard().setText(node.path)
 
     @property
     def primary_view(self):
