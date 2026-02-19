@@ -93,6 +93,29 @@ class SettingsModel(QAbstractItemModel):
             editor_type="int", min_val=10, max_val=1000,
             category="plot", key="update_interval_ms"))
 
+        # Tabs
+        tabs_node = SettingNode("Tabs")
+        self._root.add_child(tabs_node)
+        for label, key in [
+            ("Receive/Transmit", "receive_transmit"),
+            ("Database", "database"),
+            ("Trace", "trace"),
+            ("Plot", "plot"),
+            ("Diagnostics", "diagnostics"),
+            ("Project Manager", "project_manager"),
+            ("Watch", "watch"),
+            ("Watch DID", "watch_did"),
+            ("DTC", "dtc"),
+            ("Rx Filter", "rx_filter"),
+            ("Plot List", "plot_list"),
+            ("Settings", "settings"),
+            ("Help", "help"),
+            ("Log", "log"),
+        ]:
+            tabs_node.add_child(SettingNode(
+                label, getattr(opts.tabs, key),
+                editor_type="bool", category="tabs", key=key))
+
     def rebuild(self):
         self.beginResetModel()
         self._root = SettingNode("root")

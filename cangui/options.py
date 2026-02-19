@@ -43,12 +43,31 @@ class ConnectionDefaults:
 
 
 @dataclass
+class TabVisibilityOptions:
+    receive_transmit: bool = True
+    database: bool = True
+    trace: bool = True
+    plot: bool = True
+    diagnostics: bool = False
+    project_manager: bool = True
+    watch: bool = True
+    watch_did: bool = False
+    dtc: bool = True
+    rx_filter: bool = True
+    plot_list: bool = True
+    settings: bool = True
+    help: bool = True
+    log: bool = True
+
+
+@dataclass
 class AppOptions:
     general: GeneralOptions = field(default_factory=GeneralOptions)
     rx_tx: RxTxOptions = field(default_factory=RxTxOptions)
     tracer: TracerOptions = field(default_factory=TracerOptions)
     connection_defaults: ConnectionDefaults = field(default_factory=ConnectionDefaults)
     plot: PlotOptions = field(default_factory=PlotOptions)
+    tabs: TabVisibilityOptions = field(default_factory=TabVisibilityOptions)
 
     def save(self):
         with open(_config_path(), "w") as f:
@@ -62,12 +81,17 @@ class AppOptions:
         try:
             with open(path) as f:
                 data = json.load(f)
+            # Filter to only known keys to avoid TypeError on old/extra fields
+            def _filter(dc, d):
+                return {k: v for k, v in d.items() if k in dc.__dataclass_fields__}
             return cls(
-                general=GeneralOptions(**data.get("general", {})),
-                rx_tx=RxTxOptions(**data.get("rx_tx", {})),
-                tracer=TracerOptions(**data.get("tracer", {})),
-                connection_defaults=ConnectionDefaults(**data.get("connection_defaults", {})),
-                plot=PlotOptions(**data.get("plot", {})),
+                general=GeneralOptions(**_filter(GeneralOptions, data.get("general", {}))),
+                rx_tx=RxTxOptions(**_filter(RxTxOptions, data.get("rx_tx", {}))),
+                tracer=TracerOptions(**_filter(TracerOptions, data.get("tracer", {}))),
+                connection_defaults=ConnectionDefaults(
+                    **_filter(ConnectionDefaults, data.get("connection_defaults", {}))),
+                plot=PlotOptions(**_filter(PlotOptions, data.get("plot", {}))),
+                tabs=TabVisibilityOptions(**_filter(TabVisibilityOptions, data.get("tabs", {}))),
             )
         except Exception:
             return cls()

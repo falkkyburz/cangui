@@ -7,7 +7,7 @@ from cangui.can_bus import BusConfig
 from cangui.service_can import CanService
 
 _LINUX_INTERFACES = ["socketcan-virtual", "socketcan"]
-_ALL_INTERFACES = _LINUX_INTERFACES + ["pcan", "ixxat", "kvaser", "vector", "virtual"]
+_ALL_INTERFACES = _LINUX_INTERFACES + ["pcan", "vector", "slcan", "virtual"]
 
 # Hide Linux-only SocketCAN interfaces on Windows
 INTERFACES = (
@@ -21,6 +21,7 @@ DEFAULT_CHANNELS = {
     "socketcan": "can0",
     "pcan": "PCAN_USBBUS1",
     "vector": "0",
+    "slcan": "COM1" if sys.platform == "win32" else "/dev/ttyUSB0",
     "virtual": "",
 }
 

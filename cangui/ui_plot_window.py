@@ -107,7 +107,7 @@ class PlotWindow(QWidget):
         return self._plot_widget
 
     def set_update_interval(self, ms: int):
-        self._update_timer.setInterval(ms)
+        self._update_timer.setInterval(max(50, ms))  # cap at 20 fps
 
     def add_signal_curve(self, arb_id: int, signal_name: str, unit: str,
                          color: str, width: int):
@@ -167,10 +167,12 @@ class PlotWindow(QWidget):
             self._plot_widget.disableAutoRange()
 
     def _update_plot(self):
+        any_updated = False
         for key, curve in self._curves.items():
-            data = self._plot_service.get_display_data(key)
+            data = self._plot_service.consume_display_data(key)
             if data is None:
                 continue
             curve.setData(data[0], data[1])
-        if self._auto_range:
+            any_updated = True
+        if any_updated and self._auto_range:
             self._plot_widget.enableAutoRange()

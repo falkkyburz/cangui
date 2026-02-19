@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QSplitter, QTabWidget, QApplication,
 )
 from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 
 from cangui.can_bus import BusConfig
 from cangui.can_message import CanMessage
@@ -38,8 +38,10 @@ from cangui.ui_watch_did_window import WatchDidWindow
 from cangui.ui_dtc_window import DtcWindow
 from cangui.ui_help_window import HelpWindow
 from cangui.ui_settings_window import SettingsWindow
+from cangui.ui_log_window import LogWindow
 from cangui.ui_plot_list_window import PlotListWindow
 from cangui.ui_database_window import DatabaseWindow
+from cangui.script_plugin import ScriptPlugin
 from cangui.ui_focus_manager import FocusManager
 from cangui.service_workspace import WorkspaceService
 from cangui.worker_can_transmitter import CanTransmitter
@@ -47,6 +49,8 @@ from cangui.worker_trace_player import TracePlayer
 
 
 class MainWindow(QMainWindow):
+    _tx_display_update = Signal(int, bytes)  # (row, actual_data) — cross-thread, queued
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("cangui")
@@ -102,8 +106,14 @@ class MainWindow(QMainWindow):
         # Trace replay
         self._trace_player: TracePlayer | None = None
 
+        # Script plugin
+        self._script_plugin = ScriptPlugin()
+
         # Create windows and layout
         self._create_layout()
+
+        # Ensure trace folder is set even before any project is saved/loaded
+        self._sync_trace_folder()
 
         # Keyboard shortcuts (no menu bar)
         self._create_shortcuts()
@@ -116,6 +126,7 @@ class MainWindow(QMainWindow):
         self._focus.register("4", self._diag_win, self._main_tabs, "Diagnostics")
         self._focus.register("D", self._database_win, self._main_tabs, "Database")
         self._focus.register("5", self._project_win, self._small_tabs, "Project Manager")
+        self._focus.register("L", self._log_win, self._small_tabs, "Log")
         self._focus.register("6", self._watch_win, self._list_tabs, "Watch")
         self._focus.register("7", self._watch_did_win, self._list_tabs, "Watch DID")
         self._focus.register("8", self._dtc_win, self._list_tabs, "DTC")
@@ -133,6 +144,7 @@ class MainWindow(QMainWindow):
             ("4", "Diagnostics", "Window switch"),
             ("D", "Database", "Window switch"),
             ("5", "Project Manager", "Window switch"),
+            ("L", "Log", "Window switch"),
             ("6", "Watch", "Window switch"),
             ("7", "Watch DID", "Window switch"),
             ("8", "DTC", "Window switch"),
@@ -175,7 +187,12 @@ class MainWindow(QMainWindow):
         self._trace_win = TraceWindow(self._trace_model)
         self._trace_win.save_trace_requested.connect(self._save_trace)
         self._trace_win.load_trace_requested.connect(self._load_trace)
+        self._trace_win.start_recording_requested.connect(self._trace_start)
         self._trace_model.file_changed.connect(self._on_trace_file_changed)
+
+        self._log_win = LogWindow()
+        self._log_win.message_appended.connect(
+            lambda: self._small_tabs.setCurrentWidget(self._log_win))
 
         self._project_win = ProjectWindow(self._project_model)
         self._project_win.new_requested.connect(self._new_project)
@@ -183,6 +200,7 @@ class MainWindow(QMainWindow):
         self._project_win.save_requested.connect(self._save_project)
         self._project_win.save_as_requested.connect(self._save_project_as)
         self._project_win.file_remove_requested.connect(self._remove_project_file)
+        self._project_win.import_file_requested.connect(self._on_import_file)
 
         self._watch_win = WatchWindow(self._watch_model)
         self._watch_win.add_to_plot_requested.connect(self._add_signal_to_plot)
@@ -214,6 +232,7 @@ class MainWindow(QMainWindow):
         self._database_win.dbc_imported.connect(self._on_dbc_imported)
         self._database_win.add_to_watch_requested.connect(self._add_signal_to_watch)
         self._database_win.add_to_plot_requested.connect(self._add_signal_to_plot)
+        self._database_win.add_to_tx_requested.connect(self._add_db_message_to_tx)
 
         # 3-pane layout with QSplitter + QTabWidget
         self._h_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -237,6 +256,7 @@ class MainWindow(QMainWindow):
         self._small_tabs.setTabsClosable(False)
         self._small_tabs.setMovable(True)
         self._small_tabs.addTab(self._project_win, "Project Manager [5]")
+        self._small_tabs.addTab(self._log_win, "Log [L]")
         self._v_splitter.addWidget(self._small_tabs)
 
         # List pane (bottom-right)
@@ -284,6 +304,8 @@ class MainWindow(QMainWindow):
             self._list_tabs,
         )
 
+        self._apply_tab_visibility()
+
     def _create_shortcuts(self):
         def _shortcut(key, slot):
             s = QShortcut(QKeySequence(key), self)
@@ -322,6 +344,26 @@ class MainWindow(QMainWindow):
     def _on_connection_status(self, _index: int, status: str):
         if status == "OK":
             self._ensure_transmitter()
+            self._call_plugin_inits()
+
+    def _call_plugin_inits(self):
+        """Pass current active connections to all loaded plugins' init()."""
+        connections = [
+            {
+                "interface": conn.config.interface,
+                "channel": conn.config.channel,
+                "bitrate": conn.config.bitrate,
+                "fd": conn.config.fd,
+                "name": conn.config.name,
+                "bus_number": conn.config.bus_number,
+            }
+            for conn in self._can_service.connections
+            if conn.bus.is_connected
+        ]
+        if self._script_plugin.is_loaded:
+            self._script_plugin.call_init(connections)
+        if self._diag_win._security_loader.is_loaded:
+            self._diag_win._security_loader.call_init(connections)
 
     def _ensure_transmitter(self):
         """Start the TX transmitter if not already running."""
@@ -329,10 +371,17 @@ class MainWindow(QMainWindow):
             return
         self._transmitter = CanTransmitter(self._tx_model, self._send_message, self)
         self._transmitter.counts_updated.connect(self._tx_model.increment_counts)
+        self._tx_display_update.connect(self._tx_model.update_last_sent)
         self._transmitter.start()
 
     def _send_message(self, msg):
         """Send a CAN message on the first connected bus."""
+        if self._script_plugin.is_loaded:
+            data = self._script_plugin.apply_tx(msg.arbitration_id, msg.data)
+            if data != msg.data:
+                msg.data = data
+                if msg.row >= 0:
+                    self._tx_display_update.emit(msg.row, data)
         for conn in self._can_service.connections:
             if conn.bus.is_connected and conn.config.bus_number == msg.bus:
                 conn.bus.send(msg)
@@ -350,6 +399,23 @@ class MainWindow(QMainWindow):
         buses = [c.config.bus_number for c in self._can_service.connections] or [1]
         self._tx_model.add_empty_message(bus=buses[0])
         self._rx_tx_win.edit_last_tx_can_id()
+
+    def _add_db_message_to_tx(self, can_id: int, dlc: int, is_extended: bool,
+                              symbol: str, cycle_ms: int, bus: int):
+        """Add a database message to the TX list."""
+        from cangui.model_tx_message import TxMessageItem
+        buses = [c.config.bus_number for c in self._can_service.connections] or [1]
+        effective_bus = bus if bus in buses else buses[0]
+        self._tx_model.add_message(TxMessageItem(
+            bus=effective_bus,
+            can_id=can_id,
+            is_extended_id=is_extended,
+            length=dlc,
+            symbol=symbol,
+            raw_data=bytearray(dlc),
+            cycle_time_ms=cycle_ms if cycle_ms > 0 else 100,
+        ))
+        self._main_tabs.setCurrentWidget(self._rx_tx_win)
 
     # -- DBC / Database management --
 
@@ -374,13 +440,22 @@ class MainWindow(QMainWindow):
                 self._db_manager.remove_file(path)
             except Exception:
                 pass
-            self._database_win.remove_dbc(path)
+            from pathlib import Path as _Path
+            if _Path(path).suffix.lower() in ('.dbc', '.kcd'):
+                self._database_win.remove_dbc(path)
             self._rx_model.refresh_symbols()
             self._tx_model.refresh_signals()
         elif category == "trace":
             self._project.remove_trace_file(path)
         elif category == "plot":
             self._project.remove_plot_file(path)
+        elif category == "script":
+            self._script_plugin.unload()
+            self._dispatcher.set_rx_hook(None)
+            self._project.set_script_plugin("")
+        elif category == "seedkey":
+            self._diag_win._security_loader.unload()
+            self._project.set_seedkey_file("")
         self._project_win.refresh()
 
     # -- Project management --
@@ -392,7 +467,7 @@ class MainWindow(QMainWindow):
         self._tx_model.clear()
         self._watch_model.clear()
         self._trace_model.clear()
-        self._trace_model.set_trace_folder(None)
+        self._sync_trace_folder()
         self._rx_filter_model.from_dicts([])
         self._database_win.from_dict([])
         self._project_win.refresh()
@@ -424,13 +499,18 @@ class MainWindow(QMainWindow):
         self._db_manager.clear()
         self._database_win.from_dict([])
 
-        # Import DBC files into both the view and decode manager
+        # Import database files into the decode manager; DBC/KCD also go to the view
         for db_file in data.database_files:
             try:
                 self._db_manager.load_file(db_file)
-                self._database_win.import_dbc_silent(db_file)
             except Exception:
                 pass
+            from pathlib import Path as _Path
+            if _Path(db_file).suffix.lower() in ('.dbc', '.kcd'):
+                try:
+                    self._database_win.import_dbc_silent(db_file)
+                except Exception:
+                    pass
 
         # Append manually created databases from .db.json
         db_editor_data = self._project.load_database_editor()
@@ -512,6 +592,24 @@ class MainWindow(QMainWindow):
         # Restore settings
         if data.settings:
             self._settings_win.apply_project_settings(data.settings)
+
+        # Restore Script plugin
+        self._script_plugin.unload()
+        self._dispatcher.set_rx_hook(None)
+        if data.script_plugin_file:
+            try:
+                self._script_plugin.load(data.script_plugin_file)
+                self._dispatcher.set_rx_hook(self._script_plugin.apply_rx)
+            except Exception:
+                pass
+
+        # Restore seed-key plugin
+        self._diag_win._security_loader.unload()
+        if data.seedkey_file:
+            try:
+                self._diag_win._security_loader.load(data.seedkey_file)
+            except Exception:
+                pass
 
         # Restore workspace layout
         if data.workspace_state:
@@ -631,8 +729,13 @@ class MainWindow(QMainWindow):
     # -- Trace --
 
     def _trace_start(self):
+        if self._project.path is None:
+            self._log_win.append(
+                "ERROR",
+                "Trace cannot start: project is not saved. Save the project first (Ctrl+S).")
+            return
         self._trace_model.start()
-        self._trace_win._on_start()
+        self._trace_win.set_recording_state(True)
 
     def _trace_pause(self):
         self._trace_model.pause()
@@ -749,7 +852,81 @@ class MainWindow(QMainWindow):
     def _add_signal_to_plot(self, arb_id: int, signal_name: str, unit: str):
         self._plot_list_win.add_signal(arb_id, signal_name, unit)
 
+    # -- Script / Seed-Key plugins --
+
+    def _on_import_file(self, path: str):
+        """Dispatch a Project-view import by file extension."""
+        if path.endswith('.script.py'):
+            self._attach_script_plugin(path)
+        elif path.endswith('.seedkey.py'):
+            self._attach_seedkey(path)
+        elif path.endswith('.dbc'):
+            try:
+                self._database_win.import_dbc(path)
+            except Exception as e:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(self, "Import Error", f"Failed to import DBC:\n{e}")
+        elif path.endswith('.db.json'):
+            self._database_win.import_from_json(path)
+        else:
+            from pathlib import Path as _Path
+            if _Path(path).suffix.lower() in ('.odx', '.pdx', '.odx-d'):
+                self._attach_odx(path)
+
+    def _attach_odx(self, path: str):
+        try:
+            self._db_manager.load_file(path)
+            self._project.add_database_file(path)
+            self._project_win.refresh()
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "ODX Import Error", f"Failed to import ODX:\n{e}")
+
+    def _attach_script_plugin(self, path: str):
+        try:
+            self._script_plugin.load(path)
+            self._project.set_script_plugin(path)
+            self._dispatcher.set_rx_hook(self._script_plugin.apply_rx)
+            self._project_win.refresh()
+            self._call_plugin_inits()
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Script Plugin Error", f"Failed to load plugin:\n{e}")
+
+    def _attach_seedkey(self, path: str):
+        try:
+            self._diag_win._security_loader.load(path)
+            self._project.set_seedkey_file(path)
+            self._project_win.refresh()
+            self._call_plugin_inits()
+        except Exception as e:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Seed-Key Error", f"Failed to load plugin:\n{e}")
+
     # -- Settings --
+
+    def _apply_tab_visibility(self):
+        """Show or hide tabs according to current AppOptions.tabs settings."""
+        t = self._options.tabs
+        for widget, tab_widget, visible in [
+            (self._rx_tx_win,    self._main_tabs,  t.receive_transmit),
+            (self._database_win, self._main_tabs,  t.database),
+            (self._trace_win,    self._main_tabs,  t.trace),
+            (self._plot_win,     self._main_tabs,  t.plot),
+            (self._diag_win,     self._main_tabs,  t.diagnostics),
+            (self._project_win,  self._small_tabs, t.project_manager),
+            (self._log_win,      self._small_tabs, t.log),
+            (self._watch_win,    self._list_tabs,  t.watch),
+            (self._watch_did_win,self._list_tabs,  t.watch_did),
+            (self._dtc_win,      self._list_tabs,  t.dtc),
+            (self._rx_filter_win,self._list_tabs,  t.rx_filter),
+            (self._plot_list_win,self._list_tabs,  t.plot_list),
+            (self._settings_win, self._list_tabs,  t.settings),
+            (self._help_win,     self._list_tabs,  t.help),
+        ]:
+            idx = tab_widget.indexOf(widget)
+            if idx >= 0:
+                tab_widget.setTabVisible(idx, visible)
 
     def _on_setting_changed(self, category: str, key: str, value):
         """Handle a setting change from the Settings window."""
@@ -761,6 +938,8 @@ class MainWindow(QMainWindow):
             self._plot_service.max_display_points = int(value)
         elif category == "tracer" and key == "trace_format":
             self._trace_model.set_trace_format(str(value))
+        elif category == "tabs":
+            self._apply_tab_visibility()
         self._options.save()
 
     # -- Misc --
@@ -830,4 +1009,5 @@ class MainWindow(QMainWindow):
             self._transmitter.stop()
         self._uds_service.disconnect()
         self._can_service.disconnect_all()
+        self._trace_model.shutdown()
         super().closeEvent(event)

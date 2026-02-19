@@ -1,7 +1,7 @@
-from dataclasses import dataclass, field
+import bisect
 
 import numpy as np
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QObject, QTimer
 
 from cangui.can_message import CanMessage
 from cangui.signal_decoder import SignalDecoder
@@ -64,36 +64,68 @@ def lttb_downsample(x: np.ndarray, y: np.ndarray, n: int) -> tuple[np.ndarray, n
     return out_x, out_y
 
 
-@dataclass
 class SignalBuffer:
-    arb_id: int
-    signal_name: str
-    unit: str
-    times: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.float64))
-    values: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.float64))
+    """Stores all raw samples and produces display-ready downsampled views.
+
+    Raw data is kept indefinitely (like the trace log).  Display data is a
+    rolling time-window slice, downsampled with LTTB, and only recomputed
+    when new samples have arrived since the last render call.
+    """
+
+    def __init__(self, arb_id: int, signal_name: str, unit: str = ""):
+        self.arb_id = arb_id
+        self.signal_name = signal_name
+        self.unit = unit
+        # All samples, never trimmed — O(1) appends via Python list
+        self._times: list[float] = []
+        self._values: list[float] = []
+        # Set whenever new data arrives; cleared by consume_display_data()
+        self._dirty = False
 
     def append(self, t: float, value: float):
-        self.times = np.append(self.times, t)
-        self.values = np.append(self.values, value)
+        self._times.append(t)
+        self._values.append(value)
+        self._dirty = True
 
-    def trim(self, max_age: float):
-        """Remove samples older than max_age seconds from the latest."""
-        if len(self.times) == 0:
-            return
-        cutoff = self.times[-1] - max_age
-        mask = self.times >= cutoff
-        self.times = self.times[mask]
-        self.values = self.values[mask]
+    def consume_display_data(
+        self, time_window: float, max_points: int
+    ) -> tuple[np.ndarray, np.ndarray] | None:
+        """Return display arrays only if new data arrived since the last call.
+
+        Returns None when nothing has changed so the caller can skip setData().
+        The arrays cover the rolling *time_window* and contain at most
+        *max_points* points (LTTB-downsampled).  All raw samples are retained.
+        """
+        if not self._dirty:
+            return None
+        self._dirty = False
+
+        if not self._times:
+            return np.empty(0, np.float64), np.empty(0, np.float64)
+
+        t_end = self._times[-1]
+        start_idx = bisect.bisect_left(self._times, t_end - time_window)
+
+        times = np.array(self._times[start_idx:], dtype=np.float64)
+        values = np.array(self._values[start_idx:], dtype=np.float64)
+
+        if len(times) > max_points:
+            times, values = lttb_downsample(times, values, max_points)
+
+        return times, values
+
+    def mark_dirty(self):
+        """Force a display refresh on the next consume_display_data() call."""
+        self._dirty = True
 
     def clear(self):
-        self.times = np.empty(0, dtype=np.float64)
-        self.values = np.empty(0, dtype=np.float64)
+        self._times.clear()
+        self._values.clear()
+        self._dirty = True  # Trigger a blank redraw after clear
 
 
 class PlotDataService(QObject):
     """Manages rolling time-series buffers for plotted signals."""
-
-    data_updated = Signal()
 
     def __init__(self, decoder: SignalDecoder, parent=None):
         super().__init__(parent)
@@ -105,7 +137,7 @@ class PlotDataService(QObject):
         self._pending: list[CanMessage] = []
 
         self._batch_timer = QTimer(self)
-        self._batch_timer.setInterval(100)
+        self._batch_timer.setInterval(50)
         self._batch_timer.timeout.connect(self._flush)
         self._batch_timer.start()
 
@@ -116,6 +148,9 @@ class PlotDataService(QObject):
     @time_window.setter
     def time_window(self, value: float):
         self._time_window = max(1.0, value)
+        # New window width means display slices must be recomputed
+        for buf in self._buffers.values():
+            buf.mark_dirty()
 
     @property
     def max_display_points(self) -> int:
@@ -124,6 +159,8 @@ class PlotDataService(QObject):
     @max_display_points.setter
     def max_display_points(self, value: int):
         self._max_display_points = max(100, value)
+        for buf in self._buffers.values():
+            buf.mark_dirty()
 
     @property
     def buffers(self) -> dict[tuple[int, str], SignalBuffer]:
@@ -135,20 +172,19 @@ class PlotDataService(QObject):
             self._buffers[key] = SignalBuffer(arb_id=arb_id, signal_name=signal_name, unit=unit)
 
     def remove_signal(self, arb_id: int, signal_name: str):
-        key = (arb_id, signal_name)
-        self._buffers.pop(key, None)
+        self._buffers.pop((arb_id, signal_name), None)
 
     def has_signal(self, arb_id: int, signal_name: str) -> bool:
         return (arb_id, signal_name) in self._buffers
 
-    def get_display_data(self, key: tuple[int, str]) -> tuple[np.ndarray, np.ndarray] | None:
-        """Return downsampled data suitable for display."""
+    def consume_display_data(
+        self, key: tuple[int, str]
+    ) -> tuple[np.ndarray, np.ndarray] | None:
+        """Return new display data for *key* if available since the last call, else None."""
         buf = self._buffers.get(key)
-        if buf is None or len(buf.times) == 0:
+        if buf is None:
             return None
-        if len(buf.times) <= self._max_display_points:
-            return buf.times, buf.values
-        return lttb_downsample(buf.times, buf.values, self._max_display_points)
+        return buf.consume_display_data(self._time_window, self._max_display_points)
 
     def on_message(self, msg: CanMessage):
         """Queue a single message for processing."""
@@ -191,13 +227,6 @@ class PlotDataService(QObject):
                 except (TypeError, ValueError):
                     continue
                 buf.append(t, value)
-
-        # Trim all active buffers once per flush
-        for buf in self._buffers.values():
-            if len(buf.times) > 0:
-                buf.trim(self._time_window)
-
-        self.data_updated.emit()
 
     def clear(self):
         for buf in self._buffers.values():

@@ -85,5 +85,7 @@ class CanService(QObject):
 
     def reset(self):
         for i in range(len(self._connections)):
+            was_connected = self._connections[i].bus.is_connected
             self.disconnect(i)
-            self.connect(i)
+            if was_connected:
+                self.connect(i)

@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QTreeView, QToolBar, QHeaderView
+from PySide6.QtWidgets import QTreeView, QToolBar, QHeaderView, QFileDialog
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Signal
 
@@ -15,6 +15,7 @@ class ProjectWindow(BaseDockWindow):
     save_requested = Signal()
     save_as_requested = Signal()
     file_remove_requested = Signal(str, str)  # (path, category)
+    import_file_requested = Signal(str)  # path
 
     def __init__(self, model: ProjectModel, parent=None):
         super().__init__(parent)
@@ -41,6 +42,16 @@ class ProjectWindow(BaseDockWindow):
 
         toolbar.addSeparator()
 
+        import_action = QAction(_icon("import"), "Import", self)
+        import_action.setToolTip(
+            "Import a file into the project\n"
+            "Supported: .script.py  .seedkey.py  .dbc  .db.json"
+        )
+        import_action.triggered.connect(self._browse_import)
+        toolbar.addAction(import_action)
+
+        toolbar.addSeparator()
+
         remove_action = QAction(_icon("trash"), "Remove File", self)
         remove_action.setToolTip("Remove selected file from project")
         remove_action.triggered.connect(self._remove_selected)
@@ -61,6 +72,20 @@ class ProjectWindow(BaseDockWindow):
 
         self._view.expandAll()
         self._layout.addWidget(self._view)
+
+    def _browse_import(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import File", "",
+            "Supported Files (*.script.py *.seedkey.py *.dbc *.db.json *.odx *.pdx *.odx-d);;"
+            "Script Plugin (*.script.py);;"
+            "Seed-Key Plugin (*.seedkey.py);;"
+            "DBC Database (*.dbc);;"
+            "Database JSON (*.db.json);;"
+            "ODX/PDX Database (*.odx *.pdx *.odx-d);;"
+            "All Files (*)"
+        )
+        if path:
+            self.import_file_requested.emit(path)
 
     def _remove_selected(self):
         idx = self._view.currentIndex()

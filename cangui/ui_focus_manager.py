@@ -13,6 +13,7 @@ class FocusManager(QObject):
         # (key_text, window, tab_widget, label)
         self._entries: list[tuple[str, QWidget, QTabWidget, str]] = []
         self._key_map: dict[int, int] = {}  # Qt.Key -> entry index
+        self._selecting = False
 
     def register(self, key: str, window: QWidget, tab_widget: QTabWidget, label: str):
         index = len(self._entries)
@@ -21,6 +22,33 @@ class FocusManager(QObject):
         qt_key = getattr(Qt.Key, f"Key_{key}", None)
         if qt_key is not None:
             self._key_map[qt_key] = index
+        for view in self._get_selectable_views(window):
+            sm = view.selectionModel()
+            if sm is not None:
+                sm.selectionChanged.connect(
+                    lambda sel, _, w=window: self._on_view_selected(sel, w)
+                )
+
+    def _get_selectable_views(self, window):
+        if hasattr(window, 'selectable_views'):
+            return window.selectable_views
+        pv = getattr(window, 'primary_view', None)
+        if pv is not None and hasattr(pv, 'selectionModel'):
+            return [pv]
+        return []
+
+    def _on_view_selected(self, selected, source_window):
+        if self._selecting or not selected.indexes():
+            return
+        self._selecting = True
+        try:
+            for _key, window, _tab, _label in self._entries:
+                if window is source_window:
+                    continue
+                for view in self._get_selectable_views(window):
+                    view.clearSelection()
+        finally:
+            self._selecting = False
 
     def install(self):
         QApplication.instance().installEventFilter(self)

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import Qt, QAbstractItemModel, QModelIndex
+from PySide6.QtCore import Qt, QAbstractItemModel, QModelIndex, QTimer
 
 from cangui.signal_decoder import SignalDecoder
 
@@ -34,6 +34,7 @@ class TxMessageItem:
     trigger: str = "Time"
     creator: str = "User"
     signals: list[TxSignalItem] = field(default_factory=list)
+    last_sent_data: bytes | None = None  # set by script plugin feedback; display-only
 
 
 COLUMNS = ["Bus", "ID (hex)", "Ext", "Type", "Length", "Symbol",
@@ -53,6 +54,7 @@ class TxMessageModel(QAbstractItemModel):
         super().__init__(parent)
         self._items: list[TxMessageItem] = []
         self._decoder: SignalDecoder | None = None
+        self._pending_last_sent: dict[int, bytes] = {}
 
     def set_decoder(self, decoder: SignalDecoder):
         self._decoder = decoder
@@ -121,7 +123,9 @@ class TxMessageModel(QAbstractItemModel):
                     case 3: return item.frame_type
                     case 4: return item.length
                     case 5: return item.symbol
-                    case 6: return " ".join(f"{b:02X}" for b in item.raw_data[:item.length])
+                    case 6:
+                        display = item.last_sent_data if item.last_sent_data is not None else item.raw_data
+                        return " ".join(f"{b:02X}" for b in display[:item.length])
                     case 7: return item.cycle_time_ms
                     case 8: return item.count
                     case 9: return "Time" if item.cycle_enabled else "Wait"
@@ -207,6 +211,7 @@ class TxMessageModel(QAbstractItemModel):
                     # Auto-extend when the ID requires more than 11 bits
                     if item.can_id > 0x7FF:
                         item.is_extended_id = True
+                    item.last_sent_data = None
                     self._resolve_from_db(item)
                     self._rebuild_signals(index.row())
                 case 4:
@@ -228,6 +233,7 @@ class TxMessageModel(QAbstractItemModel):
                     if arb_id is None:
                         return False
                     item.can_id = arb_id
+                    item.last_sent_data = None
                     self._resolve_from_db(item)
                     self._rebuild_signals(index.row())
                 case 6:
@@ -235,6 +241,7 @@ class TxMessageModel(QAbstractItemModel):
                         data = bytes.fromhex(str(value).replace(" ", ""))
                         item.raw_data = bytearray(data)
                         item.length = len(data)
+                        item.last_sent_data = None
                     except ValueError:
                         return False
                     self._redecode_signals(index.row())
@@ -280,6 +287,7 @@ class TxMessageModel(QAbstractItemModel):
             parsed = val_str  # Keep as string for enum choices
 
         sig.value = parsed
+        item.last_sent_data = None  # user edited a signal; clear plugin display
 
         # Re-encode all signals back into raw_data, then redecode
         # so displayed values snap to the actual quantized values
@@ -360,14 +368,15 @@ class TxMessageModel(QAbstractItemModel):
             # Decode current raw_data to get actual signal values
             self._redecode_signals(row)
 
-    def _redecode_signals(self, row: int):
-        """Re-decode signals from raw_data after raw data changes."""
+    def _redecode_signals(self, row: int, data: bytes | None = None):
+        """Re-decode signals from raw_data (or given data) after raw data changes."""
         if self._decoder is None:
             return
         item = self._items[row]
         if not item.signals:
             return
-        decoded = self._decoder.decode(item.can_id, bytes(item.raw_data))
+        decode_data = data if data is not None else bytes(item.raw_data)
+        decoded = self._decoder.decode(item.can_id, decode_data)
         if not decoded:
             return
         decoded_map = {d.name: d for d in decoded}
@@ -509,6 +518,26 @@ class TxMessageModel(QAbstractItemModel):
                 self.index(0, 8),
                 self.index(len(self._items) - 1, 8),
             )
+
+    def update_last_sent(self, row: int, data: bytes):
+        """Coalesce script-plugin display updates; flushed at most every 50 ms."""
+        if 0 <= row < len(self._items):
+            was_empty = not self._pending_last_sent
+            self._pending_last_sent[row] = data
+            if was_empty:
+                QTimer.singleShot(50, self._flush_last_sent)
+
+    def _flush_last_sent(self):
+        pending = self._pending_last_sent
+        self._pending_last_sent = {}
+        for row, data in pending.items():
+            if 0 <= row < len(self._items):
+                self._items[row].last_sent_data = data
+                idx = self.index(row, 6)
+                self.dataChanged.emit(idx, idx)
+                self._redecode_signals(row, data)
+        if self._pending_last_sent:
+            QTimer.singleShot(50, self._flush_last_sent)
 
     def increment_count(self, row: int):
         if 0 <= row < len(self._items):

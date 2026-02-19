@@ -44,7 +44,7 @@ class CanBus:
             channel=self.config.channel,
             bitrate=self.config.bitrate,
             fd=self.config.fd,
-            receive_own_messages=True,
+            receive_own_messages=self.config.is_virtual,
         )
 
     def disconnect(self):

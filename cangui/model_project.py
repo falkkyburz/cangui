@@ -76,6 +76,20 @@ class ProjectModel(QAbstractItemModel):
             for f in self._project.data.plot_files:
                 plot_group.add_child(ProjectNode(Path(f).name, path=f, category="plot"))
 
+        # Script plugin
+        if self._project.data.script_plugin_file:
+            script_group = ProjectNode("Script Plugin")
+            proj_node.add_child(script_group)
+            f = self._project.data.script_plugin_file
+            script_group.add_child(ProjectNode(Path(f).name, path=f, category="script"))
+
+        # Seed-Key plugin
+        if self._project.data.seedkey_file:
+            sk_group = ProjectNode("Seed-Key")
+            proj_node.add_child(sk_group)
+            f = self._project.data.seedkey_file
+            sk_group.add_child(ProjectNode(Path(f).name, path=f, category="seedkey"))
+
         self.endResetModel()
 
     def refresh(self):

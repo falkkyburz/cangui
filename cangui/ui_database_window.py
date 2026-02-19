@@ -60,6 +60,7 @@ class DatabaseWindow(QWidget):
     dbc_imported = Signal(str)  # file path
     add_to_watch_requested = Signal(int, str, str, str)  # arb_id, signal_name, unit, direction
     add_to_plot_requested = Signal(int, str, str)  # arb_id, signal_name, unit
+    add_to_tx_requested = Signal(int, int, bool, str, int, int)  # can_id, dlc, is_extended, symbol, cycle_ms, bus
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -126,6 +127,11 @@ class DatabaseWindow(QWidget):
         add_plot = QAction(_icon("plot"), "Add to Plot", self)
         add_plot.triggered.connect(self._on_add_to_plot)
         toolbar.addAction(add_plot)
+
+        add_tx = QAction(_icon("send"), "Add to TX", self)
+        add_tx.setToolTip("Add selected message to the TX list")
+        add_tx.triggered.connect(self._on_add_to_tx)
+        toolbar.addAction(add_tx)
 
         layout.addWidget(toolbar)
 
@@ -261,8 +267,11 @@ class DatabaseWindow(QWidget):
         path, _ = QFileDialog.getOpenFileName(
             self, "Import JSON Database", "",
             "JSON Files (*.json *.db.json);;All Files (*)")
-        if not path:
-            return
+        if path:
+            self.import_from_json(path)
+
+    def import_from_json(self, path: str):
+        """Import a .db.json file into the database model."""
         try:
             with open(path) as f:
                 data = json.load(f)
@@ -317,6 +326,24 @@ class DatabaseWindow(QWidget):
             return
         QMessageBox.information(self, "Add to Plot",
                                 "Select a message or signal.")
+
+    def _on_add_to_tx(self):
+        index = self._tree.currentIndex()
+        # Resolve to the message regardless of whether a message or signal is selected
+        msg = self._model.get_message(index)
+        if msg is None:
+            result = self._model.get_signal(index)
+            if result is not None:
+                msg, _ = result
+        if msg is None:
+            QMessageBox.information(self, "Add to TX", "Select a message first.")
+            return
+        file_row, _ = self._model.get_message_row(index)
+        bus = (self._model._items[file_row].bus
+               if 0 <= file_row < len(self._model._items) else 1)
+        is_extended = msg.can_id > 0x7FF
+        self.add_to_tx_requested.emit(
+            msg.can_id, msg.dlc, is_extended, msg.name, msg.cycle_time_ms, bus)
 
     # -- DBC import/export --
 

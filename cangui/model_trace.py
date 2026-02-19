@@ -212,6 +212,13 @@ class TraceModel(QAbstractTableModel):
         self._flush()           # drain _pending → disk queue + _staged
         self._disk_thread.cmd_stop()  # queued after all write commands
 
+    def shutdown(self):
+        """Stop the background disk-writer thread. Call once on application exit."""
+        self._batch_timer.stop()
+        self._view_timer.stop()
+        self._flush()
+        self._disk_thread.cmd_quit()
+
     def clear(self):
         self.beginResetModel()
         self._entries.clear()

@@ -6,6 +6,9 @@ import sys
 if os.environ.get("XDG_SESSION_TYPE") == "wayland":
     os.environ["QT_QPA_PLATFORM"] = "xcb"
 
+# Suppress "invalid style override" warnings — we force Fusion ourselves below.
+os.environ.pop("QT_STYLE_OVERRIDE", None)
+
 from PySide6.QtWidgets import QApplication
 
 from cangui.ui_main_window import MainWindow

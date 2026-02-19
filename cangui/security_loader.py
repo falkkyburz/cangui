@@ -2,17 +2,29 @@ import importlib.util
 from pathlib import Path
 from typing import Callable
 
+EXTENSION = ".seedkey.py"
+
 
 class SecurityLoader:
     """Loads an external Python file containing a seed-key algorithm.
 
-    The file must define a function:
+    Convention: plugin files should use the extension ``.seedkey.py``
+    (e.g. ``MyECU.seedkey.py``).
+
+    The file must define:
         def calculate_key(seed: bytes, security_level: int) -> bytes
+
+    Optionally:
+        def init(connections: list[dict]) -> None
+            Called when a CAN connection becomes active or is reset.
+            ``connections`` is a list of dicts with keys:
+              interface, channel, bitrate, fd, name, bus_number
     """
 
     def __init__(self):
         self._path: Path | None = None
         self._func: Callable[[bytes, int], bytes] | None = None
+        self._init_func: Callable | None = None
 
     @property
     def path(self) -> Path | None:
@@ -44,8 +56,21 @@ class SecurityLoader:
         if not callable(func):
             raise TypeError(f"'calculate_key' is not callable in: {path}")
 
+        init_fn = getattr(module, "init", None)
+        if init_fn is not None and not callable(init_fn):
+            raise TypeError(f"'init' is not callable in: {path}")
+
         self._path = path
         self._func = func
+        self._init_func = init_fn
+
+    def call_init(self, connections: list[dict]):
+        """Call the plugin's init() if defined."""
+        if self._init_func is not None:
+            try:
+                self._init_func(connections)
+            except Exception:
+                pass
 
     def calculate_key(self, seed: bytes, security_level: int) -> bytes:
         """Compute the key from a seed using the loaded algorithm."""
@@ -56,3 +81,4 @@ class SecurityLoader:
     def unload(self):
         self._path = None
         self._func = None
+        self._init_func = None

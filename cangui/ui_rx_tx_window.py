@@ -272,6 +272,10 @@ class RxTxWindow(BaseDockWindow):
     def primary_view(self):
         return self._rx_view
 
+    @property
+    def selectable_views(self):
+        return [self._rx_view, self._tx_view, self._conn_view]
+
     @staticmethod
     def _set_default_widths(view: QTreeView, widths: list[int] = _DEFAULT_WIDTHS):
         header = view.header()
@@ -379,6 +383,7 @@ class RxTxWindow(BaseDockWindow):
                 is_extended_id=item.is_extended_id,
                 dlc=item.length,
                 bus=item.bus,
+                row=row,
             )
             self._send_once_callback(msg)
             self._tx_model.increment_count(row)

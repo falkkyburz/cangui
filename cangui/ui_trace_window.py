@@ -16,6 +16,7 @@ class TraceWindow(QWidget):
 
     load_trace_requested = Signal(str)  # file path
     save_trace_requested = Signal(str)  # file path
+    start_recording_requested = Signal()
 
     def __init__(self, model: TraceModel, parent=None):
         super().__init__(parent)
@@ -136,15 +137,18 @@ class TraceWindow(QWidget):
         self._stop_action.setEnabled(recording)
 
     def _on_start(self):
-        self._model.start()
-        self._update_button_state(True)
-        self._state_label.setText("Recording")
+        self.start_recording_requested.emit()
 
     def _on_pause(self):
         self._model.pause()
         self._update_button_state(False)
         self._start_action.setEnabled(True)
         self._state_label.setText("Paused")
+
+    def set_recording_state(self, recording: bool):
+        """Update button states and status label without touching the model."""
+        self._update_button_state(recording)
+        self._state_label.setText("Recording" if recording else "Stopped")
 
     def _on_stop(self):
         self._model.stop()

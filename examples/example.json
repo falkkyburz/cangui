@@ -1,0 +1,942 @@
+{
+  "name": "example",
+  "database_files": [
+    "example.dbc"
+  ],
+  "trace_files": [
+    "trace/2026-02-19T20-44-37.trc"
+  ],
+  "watch_signals": [
+    {
+      "arb_id": 1792,
+      "signal_name": "Temperature",
+      "display_name": "",
+      "unit": "degC",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1792,
+      "signal_name": "Pressure",
+      "display_name": "",
+      "unit": "kPa",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1792,
+      "signal_name": "Voltage",
+      "display_name": "",
+      "unit": "V",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1792,
+      "signal_name": "E2E_Counter",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1792,
+      "signal_name": "E2E_CRC",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 256,
+      "signal_name": "EngineSpeed",
+      "display_name": "",
+      "unit": "rpm",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 256,
+      "signal_name": "EngineTemp",
+      "display_name": "",
+      "unit": "degC",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 256,
+      "signal_name": "ThrottlePos",
+      "display_name": "",
+      "unit": "%",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 256,
+      "signal_name": "EngineRunning",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 512,
+      "signal_name": "Speed",
+      "display_name": "",
+      "unit": "km/h",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 512,
+      "signal_name": "Odometer",
+      "display_name": "",
+      "unit": "km",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 768,
+      "signal_name": "BrakePedal",
+      "display_name": "",
+      "unit": "%",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 768,
+      "signal_name": "BrakeActive",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 768,
+      "signal_name": "ABSActive",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 768,
+      "signal_name": "BrakeTemp",
+      "display_name": "",
+      "unit": "degC",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1024,
+      "signal_name": "Headlights",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1024,
+      "signal_name": "TurnSignal",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1024,
+      "signal_name": "HazardLights",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1024,
+      "signal_name": "HighBeam",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit00",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit01",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit02",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit03",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit04",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit05",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit06",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit07",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit08",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit09",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit10",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit11",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit12",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit13",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit14",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit15",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit16",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit17",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit18",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit19",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit20",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit21",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit22",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit23",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit24",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit25",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit26",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit27",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit28",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit29",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit30",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit31",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit32",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit33",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit34",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit35",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit36",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit37",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit38",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit39",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit40",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit41",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit42",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit43",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit44",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit45",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit46",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit47",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit48",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit49",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit50",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit51",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit52",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit53",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit54",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit55",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit56",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit57",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit58",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit59",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit60",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit61",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit62",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1280,
+      "signal_name": "Bit63",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1536,
+      "signal_name": "DiagMux",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1536,
+      "signal_name": "EngineCode",
+      "display_name": "",
+      "unit": "",
+      "direction": "Rx"
+    },
+    {
+      "arb_id": 1536,
+      "signal_name": "EngineHours",
+      "display_name": "",
+      "unit": "h",
+      "direction": "Rx"
+    }
+  ],
+  "tx_messages": [
+    {
+      "bus": 1,
+      "can_id": 1792,
+      "is_extended_id": false,
+      "length": 6,
+      "symbol": "E2E_SensorData",
+      "raw_data": "5565e02e0000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1792,
+      "is_extended_id": false,
+      "length": 6,
+      "symbol": "E2E_SensorData",
+      "raw_data": "5565e02e0000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1792,
+      "is_extended_id": false,
+      "length": 6,
+      "symbol": "E2E_SensorData",
+      "raw_data": "5565e02e0000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1792,
+      "is_extended_id": false,
+      "length": 6,
+      "symbol": "E2E_SensorData",
+      "raw_data": "5565e02e0000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1792,
+      "is_extended_id": false,
+      "length": 6,
+      "symbol": "E2E_SensorData",
+      "raw_data": "5565e02e0000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1792,
+      "is_extended_id": false,
+      "length": 6,
+      "symbol": "E2E_SensorData",
+      "raw_data": "5565e02e0000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1792,
+      "is_extended_id": false,
+      "length": 6,
+      "symbol": "E2E_SensorData",
+      "raw_data": "5565e02e0000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1792,
+      "is_extended_id": false,
+      "length": 6,
+      "symbol": "E2E_SensorData",
+      "raw_data": "5565e02e0000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1792,
+      "is_extended_id": false,
+      "length": 6,
+      "symbol": "E2E_SensorData",
+      "raw_data": "5565e02e0000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1792,
+      "is_extended_id": false,
+      "length": 6,
+      "symbol": "E2E_SensorData",
+      "raw_data": "5565e02e0000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 256,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "EngineData",
+      "raw_data": "800c822601000000",
+      "cycle_time_ms": 100,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 512,
+      "is_extended_id": false,
+      "length": 4,
+      "symbol": "VehicleSpeed",
+      "raw_data": "70173930",
+      "cycle_time_ms": 200,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 768,
+      "is_extended_id": false,
+      "length": 3,
+      "symbol": "BrakeData",
+      "raw_data": "00c800",
+      "cycle_time_ms": 50,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1024,
+      "is_extended_id": false,
+      "length": 2,
+      "symbol": "Lights",
+      "raw_data": "0100",
+      "cycle_time_ms": 500,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1536,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "DiagResponse",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 100,
+      "cycle_enabled": true
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": false
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": false
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": false
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": false
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": false
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": false
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": false
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": false
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": false
+    },
+    {
+      "bus": 1,
+      "can_id": 1280,
+      "is_extended_id": false,
+      "length": 8,
+      "symbol": "BitMatrix",
+      "raw_data": "0000000000000000",
+      "cycle_time_ms": 1,
+      "cycle_enabled": false
+    }
+  ],
+  "connections": [
+    {
+      "interface": "socketcan-virtual",
+      "channel": "vcan0",
+      "bitrate": 500000,
+      "fd": false,
+      "name": "",
+      "bus_number": 1
+    }
+  ],
+  "watch_dids": [],
+  "uds_config": {},
+  "rx_filters": [
+    {
+      "enabled": true,
+      "action": "Pass",
+      "id_from": 0,
+      "id_to": 2047,
+      "bus": 0,
+      "name": "Standard"
+    },
+    {
+      "enabled": true,
+      "action": "Pass",
+      "id_from": 2048,
+      "id_to": 536870911,
+      "bus": 0,
+      "name": "Extended"
+    }
+  ],
+  "workspace_state": "{\"h_splitter\": [902, 435], \"v_splitter\": [308, 718], \"rxtx_splitter\": [474, 311, 161], \"main_tabs\": {\"order\": [\"Receive/Transmit [1]\", \"Database [D]\", \"Trace [2]\", \"Plot [3]\", \"Diagnostics [4]\"], \"current\": 2}, \"small_tabs\": {\"order\": [\"Project Manager [5]\"], \"current\": 0}, \"list_tabs\": {\"order\": [\"Watch [6]\", \"Watch DID [7]\", \"DTC [8]\", \"Rx Filter [9]\", \"Plot List [B]\", \"Settings [A]\", \"Help [0]\"], \"current\": 0}}",
+  "settings": {
+    "general": {
+      "float_format": "f",
+      "decimal_places": 3,
+      "timestamp_format": "relative"
+    },
+    "tracer": {
+      "buffer_size": 100000,
+      "auto_scroll": true,
+      "trace_format": "trc"
+    },
+    "plot": {
+      "time_window": 10.0,
+      "max_display_points": 5000,
+      "update_interval_ms": 50
+    },
+    "tabs": {
+      "receive_transmit": true,
+      "database": true,
+      "trace": true,
+      "plot": true,
+      "diagnostics": false,
+      "project_manager": true,
+      "watch": true,
+      "watch_did": false,
+      "dtc": true,
+      "rx_filter": true,
+      "plot_list": true,
+      "settings": true,
+      "help": true
+    }
+  },
+  "plot_files": [],
+  "database_editor_file": "",
+  "script_plugin_file": "E2E.script.py",
+  "seedkey_file": "Seedkey.seedkey.py"
+}

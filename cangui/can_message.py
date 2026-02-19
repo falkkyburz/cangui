@@ -15,6 +15,7 @@ class CanMessage:
     timestamp: float = field(default_factory=time.time)
     bus: int = 1
     channel: str = ""
+    row: int = -1  # TX model row index (-1 = unknown/not a TX model frame)
 
     @property
     def id_hex(self) -> str:

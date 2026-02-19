@@ -94,6 +94,7 @@ class CanTransmitter(QThread):
                         is_extended_id=item.is_extended_id,
                         dlc=item.length,
                         bus=item.bus,
+                        row=item.row,
                     )
                     try:
                         self._send(msg)

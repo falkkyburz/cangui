@@ -18,6 +18,8 @@ class ProjectData:
     settings: dict = field(default_factory=dict)
     plot_files: list[str] = field(default_factory=list)
     database_editor_file: str = ""
+    script_plugin_file: str = ""
+    seedkey_file: str = ""
 
 
 class Project:
@@ -126,6 +128,14 @@ class Project:
                 self._modified = True
                 return
 
+    def set_script_plugin(self, path: str):
+        self._data.script_plugin_file = str(Path(path).resolve()) if path else ""
+        self._modified = True
+
+    def set_seedkey_file(self, path: str):
+        self._data.seedkey_file = str(Path(path).resolve()) if path else ""
+        self._modified = True
+
     def add_database_file(self, path: str):
         self._add_to(self._data.database_files, path)
 
@@ -174,6 +184,10 @@ class Project:
                                 for f in self._data.trace_files]
         data["plot_files"] = [self._make_portable(f)
                                for f in self._data.plot_files]
+        data["script_plugin_file"] = (self._make_portable(self._data.script_plugin_file)
+                                    if self._data.script_plugin_file else "")
+        data["seedkey_file"] = (self._make_portable(self._data.seedkey_file)
+                                if self._data.seedkey_file else "")
         with open(self._path, "w") as f:
             json.dump(data, f, indent=2)
         self._modified = False
@@ -212,6 +226,9 @@ class Project:
             settings=raw.get("settings", {}),
             plot_files=_load_paths(raw.get("plot_files", [])),
             database_editor_file=raw.get("database_editor_file", ""),
+            script_plugin_file=(self._resolve_stored_path(raw.get("script_plugin_file") or raw.get("rxtx_plugin_file") or raw.get("e2e_plugin_file", "")) if (raw.get("script_plugin_file") or raw.get("rxtx_plugin_file") or raw.get("e2e_plugin_file")) else ""),
+            seedkey_file=(self._resolve_stored_path(raw["seedkey_file"])
+                          if raw.get("seedkey_file") else ""),
         )
         self._modified = False
 
