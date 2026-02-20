@@ -1,3 +1,10 @@
+"""Seed-key security algorithm loader for UDS SecurityAccess.
+
+Plugins are plain Python files with a ``.seedkey.py`` extension that must
+define ``calculate_key(seed: bytes, security_level: int) -> bytes``.
+Loaded via :class:`SecurityLoader` and called by the UDS diagnostic window
+during a SecurityAccess (0x27) exchange.
+"""
 import importlib.util
 from pathlib import Path
 from typing import Callable
@@ -22,16 +29,19 @@ class SecurityLoader:
     """
 
     def __init__(self):
+        """Initialise the loader in the unloaded state."""
         self._path: Path | None = None
         self._func: Callable[[bytes, int], bytes] | None = None
         self._init_func: Callable | None = None
 
     @property
     def path(self) -> Path | None:
+        """Absolute path of the loaded plugin file, or ``None`` when unloaded."""
         return self._path
 
     @property
     def is_loaded(self) -> bool:
+        """``True`` when a ``calculate_key`` function has been loaded."""
         return self._func is not None
 
     def load(self, path: str | Path):
@@ -79,6 +89,7 @@ class SecurityLoader:
         return self._func(seed, security_level)
 
     def unload(self):
+        """Remove the loaded algorithm and mark the loader as unloaded."""
         self._path = None
         self._func = None
         self._init_func = None

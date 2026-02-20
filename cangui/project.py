@@ -1,10 +1,60 @@
+"""Project file I/O: save, load, and portable path handling.
+
+A cangui project is a JSON file that stores all session state: database file
+paths, TX messages, watch signals, connection configs, and the workspace
+layout.  File paths are stored in a *portable* form (relative where possible)
+so projects can be shared across machines and operating systems.
+
+The project file format is versioned via the ``version`` integer field.
+:data:`PROJECT_FORMAT_VERSION` holds the current writer version; files without
+this field are treated as version 0 for backwards compatibility.
+
+See :doc:`/architecture/persistence` for a complete field inventory and path
+portability strategy.
+"""
+
 import json
+import logging
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
+
+#: Increment this whenever a backwards-incompatible change is made to the
+#: project file format.  Old files without a ``version`` field are treated
+#: as version 0 (pre-versioning) and loaded with best-effort compatibility.
+PROJECT_FORMAT_VERSION = 1
 
 
 @dataclass
 class ProjectData:
+    """Flat data bag for all project-level state written to the JSON file.
+
+    All file paths in list fields (``database_files``, ``trace_files``,
+    ``plot_files``) are stored as *absolute* strings on disk after
+    :meth:`Project.save` resolves them from the portable form.  At load time
+    :meth:`Project.load` resolves stored paths back to absolute form via
+    :meth:`Project._resolve_stored_path`.
+
+    Attributes:
+        name: Project name, derived from the filename stem.
+        database_files: Absolute paths to loaded DBC/KCD/ODX files.
+        trace_files: Absolute paths to TRC/BLF trace recordings.
+        watch_signals: List of watch signal dicts
+            ``{arb_id, signal_name, display_name, unit, direction}``.
+        tx_messages: List of TX message config dicts.
+        connections: List of CAN connection config dicts.
+        watch_dids: List of DID polling entry dicts ``{did, name, cycle_ms}``.
+        rx_filters: List of RX filter rule dicts.
+        workspace_state: JSON string capturing splitter sizes and tab layout.
+        settings: Per-project settings overrides (see :mod:`cangui.options`).
+        plot_files: Absolute paths to plot trace recordings.
+        database_editor_file: Basename of the sibling ``.db.json`` file, or
+            empty string if none.
+        script_plugin_file: Absolute path to the active ``.script.py`` plugin.
+        seedkey_file: Absolute path to the active ``.seedkey.py`` plugin.
+    """
+
     name: str = "Untitled"
     database_files: list[str] = field(default_factory=list)
     trace_files: list[str] = field(default_factory=list)
@@ -12,7 +62,6 @@ class ProjectData:
     tx_messages: list[dict] = field(default_factory=list)
     connections: list[dict] = field(default_factory=list)
     watch_dids: list[dict] = field(default_factory=list)
-    uds_config: dict = field(default_factory=dict)
     rx_filters: list[dict] = field(default_factory=list)
     workspace_state: str = ""  # JSON splitter/tab state
     settings: dict = field(default_factory=dict)
@@ -23,33 +72,55 @@ class ProjectData:
 
 
 class Project:
+    """Manages a single cangui project: data, file path, and dirty flag.
+
+    The public API is:
+
+    * :meth:`new` — reset to an empty project.
+    * :meth:`load` — deserialise from a JSON file.
+    * :meth:`save` — serialise to JSON (with portable paths).
+    * :meth:`mark_modified` — flag the project as dirty.
+    * Convenience add/remove methods for each file-list field.
+    """
+
     def __init__(self):
+        """Create a new, empty, unsaved project."""
         self._data = ProjectData()
         self._path: Path | None = None
         self._modified = False
 
     @property
     def data(self) -> ProjectData:
+        """Direct access to the mutable :class:`ProjectData` bag."""
         return self._data
 
     @property
     def path(self) -> Path | None:
+        """Absolute path to the project JSON file, or ``None`` if unsaved."""
         return self._path
 
     @property
     def name(self) -> str:
+        """Project name (filename stem)."""
         return self._data.name
 
     @name.setter
     def name(self, value: str):
+        """Set the project name and mark the project as modified."""
         self._data.name = value
         self._modified = True
 
     @property
     def is_modified(self) -> bool:
+        """``True`` if the project has unsaved changes."""
         return self._modified
 
     def mark_modified(self):
+        """Set the dirty flag without changing any data.
+
+        Call this after externally mutating :attr:`data` fields that are not
+        covered by the typed add/remove helpers.
+        """
         self._modified = True
 
     # --- Path helpers ---
@@ -114,6 +185,12 @@ class Project:
     # --- File list management ---
 
     def _add_to(self, lst: list[str], path: str):
+        """Append *path* to *lst* if it is not already present (by resolved form).
+
+        Args:
+            lst: One of the file-list fields in :attr:`data`.
+            path: Path to add (resolved to absolute before comparison).
+        """
         resolved = str(Path(path).resolve())
         norm = self._norm(resolved)
         if not any(self._norm(p) == norm for p in lst):
@@ -121,6 +198,12 @@ class Project:
             self._modified = True
 
     def _remove_from(self, lst: list[str], path: str):
+        """Remove the entry matching *path* from *lst* (by resolved form).
+
+        Args:
+            lst: One of the file-list fields in :attr:`data`.
+            path: Path to remove.  No-op if not found.
+        """
         norm = self._norm(path)
         for i, p in enumerate(lst):
             if self._norm(p) == norm:
@@ -129,29 +212,47 @@ class Project:
                 return
 
     def set_script_plugin(self, path: str):
+        """Set the active script plugin path.
+
+        Args:
+            path: Absolute or relative path to a ``.script.py`` file.
+                Pass an empty string to clear.
+        """
         self._data.script_plugin_file = str(Path(path).resolve()) if path else ""
         self._modified = True
 
     def set_seedkey_file(self, path: str):
+        """Set the active seed-key plugin path.
+
+        Args:
+            path: Absolute or relative path to a ``.seedkey.py`` file.
+                Pass an empty string to clear.
+        """
         self._data.seedkey_file = str(Path(path).resolve()) if path else ""
         self._modified = True
 
     def add_database_file(self, path: str):
+        """Add a database file (DBC/KCD/ODX) to the project, deduplicated."""
         self._add_to(self._data.database_files, path)
 
     def remove_database_file(self, path: str):
+        """Remove a database file from the project by path."""
         self._remove_from(self._data.database_files, path)
 
     def add_trace_file(self, path: str):
+        """Register a trace recording file with the project, deduplicated."""
         self._add_to(self._data.trace_files, path)
 
     def remove_trace_file(self, path: str):
+        """Remove a trace recording file from the project."""
         self._remove_from(self._data.trace_files, path)
 
     def add_plot_file(self, path: str):
+        """Register a plot trace file with the project, deduplicated."""
         self._add_to(self._data.plot_files, path)
 
     def remove_plot_file(self, path: str):
+        """Remove a plot trace file from the project."""
         self._remove_from(self._data.plot_files, path)
 
     @property
@@ -171,12 +272,29 @@ class Project:
     # --- Persistence ---
 
     def save(self, path: str | Path | None = None):
+        """Serialise the project to a JSON file.
+
+        Updates :attr:`_path` if *path* is given, then writes all
+        :class:`ProjectData` fields plus a ``"version"`` key to disk.
+        File-list paths are stored in portable (relative where possible) form
+        via :meth:`_make_portable`.  Clears :attr:`is_modified` on success.
+
+        Args:
+            path: Destination file path.  If omitted, the previously set
+                :attr:`path` is used.
+
+        Raises:
+            ValueError: If no path has ever been set and *path* is ``None``.
+            OSError: If the file cannot be written (permission denied, disk
+                full, etc.).
+        """
         if path is not None:
             self._path = Path(path)
         if self._path is None:
             raise ValueError("No path specified")
         self._data.name = self._path.stem
         data = asdict(self._data)
+        data["version"] = PROJECT_FORMAT_VERSION
         # Store file lists as portable relative paths where possible
         data["database_files"] = [self._make_portable(f)
                                    for f in self._data.database_files]
@@ -193,11 +311,35 @@ class Project:
         self._modified = False
 
     def load(self, path: str | Path):
+        """Deserialise a project from a JSON file.
+
+        Resolves all stored paths back to absolute form via
+        :meth:`_resolve_stored_path` and deduplicates them.  Handles old
+        field aliases (``rxtx_plugin_file``, ``e2e_plugin_file``) for
+        backwards compatibility.  Clears :attr:`is_modified` on success.
+
+        Args:
+            path: Path to the ``.cangui`` JSON project file.
+
+        Raises:
+            FileNotFoundError: If *path* does not exist.
+            json.JSONDecodeError: If the file is not valid JSON.
+        """
         self._path = Path(path).resolve()
         with open(self._path) as f:
             raw = json.load(f)
 
+        file_version = raw.get("version", 0)
+        if file_version > PROJECT_FORMAT_VERSION:
+            _log.warning(
+                "Project file '%s' was saved with format version %d, "
+                "but this build only supports up to version %d. "
+                "Some fields may be ignored.",
+                self._path.name, file_version, PROJECT_FORMAT_VERSION,
+            )
+
         def _load_paths(paths: list) -> list[str]:
+            """Resolve and deduplicate a list of stored path strings."""
             result: list[str] = []
             seen: list[Path] = []
             for stored in paths:
@@ -220,7 +362,6 @@ class Project:
             tx_messages=raw.get("tx_messages", []),
             connections=raw.get("connections", []),
             watch_dids=raw.get("watch_dids", []),
-            uds_config=raw.get("uds_config", {}),
             rx_filters=raw.get("rx_filters", []),
             workspace_state=raw.get("workspace_state", ""),
             settings=raw.get("settings", {}),
@@ -233,7 +374,16 @@ class Project:
         self._modified = False
 
     def save_database_editor(self, data: list[dict]):
-        """Save database editor content to a separate JSON file next to the project."""
+        """Save database editor content to a sibling ``.db.json`` file.
+
+        Writes *data* as pretty-printed JSON to ``<project_stem>.db.json``
+        next to the project file and records the basename in
+        :attr:`ProjectData.database_editor_file`.  No-op if the project has
+        not been saved yet.
+
+        Args:
+            data: List of row dicts as produced by the database editor model.
+        """
         if self._path is None:
             return
         db_file = self._path.with_suffix(".db.json")
@@ -242,7 +392,13 @@ class Project:
             json.dump(data, f, indent=2)
 
     def load_database_editor(self) -> list[dict]:
-        """Load database editor content from the separate file."""
+        """Load database editor content from the sibling ``.db.json`` file.
+
+        Returns:
+            List of row dicts, or an empty list if the project has not been
+            saved, :attr:`ProjectData.database_editor_file` is empty, or the
+            file does not exist on disk.
+        """
         if not self._data.database_editor_file or self._path is None:
             return []
         db_path = self._path.parent / self._data.database_editor_file
@@ -252,6 +408,14 @@ class Project:
             return json.load(f)
 
     def new(self, name: str = "Untitled"):
+        """Reset the project to an empty, unsaved state.
+
+        Replaces :attr:`data` with a fresh :class:`ProjectData`, clears
+        :attr:`path`, and clears :attr:`is_modified`.
+
+        Args:
+            name: Initial project name.  Defaults to ``"Untitled"``.
+        """
         self._data = ProjectData(name=name)
         self._path = None
         self._modified = False

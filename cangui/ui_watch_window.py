@@ -1,3 +1,8 @@
+"""Watch dock window for cangui.
+
+Displays the most-recently-decoded value for each pinned CAN signal, backed
+by :class:`~cangui.model_watch.WatchModel`.
+"""
 from PySide6.QtWidgets import QHeaderView, QTreeView, QToolBar
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Signal, QTimer
@@ -8,12 +13,29 @@ from cangui.icons import icon as _icon
 
 
 class WatchWindow(BaseDockWindow):
+    """Watch panel that shows the latest decoded value for each pinned signal.
+
+    Backed by :class:`~cangui.model_watch.WatchModel`.  Toolbar actions allow
+    the user to remove signals, reorder rows, and send a signal to the Plot.
+
+    Signals:
+        remove_requested: Emitted with the row index when a signal is removed.
+        add_to_plot_requested: Emitted with ``(arb_id, signal_name, unit)``
+            when the user clicks "Add to Plot".
+    """
+
     TITLE = "Watch"
 
     remove_requested = Signal(int)  # row
     add_to_plot_requested = Signal(int, str, str)  # arb_id, signal_name, unit
 
     def __init__(self, model: WatchModel, parent=None):
+        """Build the Watch panel with its toolbar and table view.
+
+        Args:
+            model: The :class:`~cangui.model_watch.WatchModel` driving the view.
+            parent: Optional Qt parent widget.
+        """
         super().__init__(parent)
         self._model = model
 
@@ -61,14 +83,17 @@ class WatchWindow(BaseDockWindow):
 
     @property
     def primary_view(self):
+        """The tree view that receives keyboard focus."""
         return self._view
 
     def _on_remove(self):
+        """Remove the currently selected signal from the watch list."""
         index = self._view.currentIndex()
         if index.isValid():
             self._model.remove_watch(index.row())
 
     def _on_move_up(self):
+        """Move the selected signal one row up and follow the row with the selection."""
         index = self._view.currentIndex()
         if not index.isValid():
             return
@@ -77,6 +102,7 @@ class WatchWindow(BaseDockWindow):
         self._view.setCurrentIndex(self._model.index(row - 1, 0))
 
     def _on_move_down(self):
+        """Move the selected signal one row down and follow the row with the selection."""
         index = self._view.currentIndex()
         if not index.isValid():
             return
@@ -85,10 +111,12 @@ class WatchWindow(BaseDockWindow):
         self._view.setCurrentIndex(self._model.index(row + 1, 0))
 
     def _resize_columns(self):
+        """Resize all columns except the last to fit their contents."""
         for i in range(self._model.columnCount() - 1):
             self._view.resizeColumnToContents(i)
 
     def _on_add_to_plot(self):
+        """Emit :attr:`add_to_plot_requested` for the currently selected signal."""
         index = self._view.currentIndex()
         if not index.isValid():
             return

@@ -1,3 +1,23 @@
+"""Three-level QAbstractItemModel for the Database tab.
+
+The tree hierarchy is: File (DbFileItem) > Message (DbMessageItem) >
+Signal (DbSignalItem).  Each level is backed by a plain Python dataclass so
+that the model is decoupled from cantools and can round-trip through JSON or
+be edited directly in the Database tab without touching any live database
+object.
+
+Column layout is described by ``COLUMNS``; editable columns per level are
+listed in ``_FILE_EDITABLE``, ``_MSG_EDITABLE``, and ``_SIG_EDITABLE``.
+
+The ``internalId`` scheme packs both *file_row* and *msg_row* into a single
+integer so that ``QModelIndex`` objects carry enough information to reconstruct
+their parents without storing Python-level back-references:
+
+    * File rows:    ``internalId == 0``
+    * Message rows: ``internalId == (file_row + 1) << 16``
+    * Signal rows:  ``internalId == ((file_row + 1) << 16) | (msg_row + 1)``
+"""
+
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,6 +67,32 @@ _SIG_EDITABLE = {COL_NAME, COL_START_BIT, COL_BIT_LENGTH, COL_BYTE_ORDER,
 
 @dataclass
 class DbSignalItem:
+    """Editable representation of a single CAN signal inside a message.
+
+    Attributes:
+        name: Signal name as it appears in the database or editor.
+        start_bit: LSB position of the signal in the CAN frame (0-based).
+        bit_length: Number of bits occupied by the signal (minimum 1).
+        byte_order: Endianness — ``"little_endian"`` or ``"big_endian"``.
+        is_signed: Whether the raw integer value is interpreted as two's-
+            complement signed.
+        factor: Linear scaling factor applied when converting raw to physical.
+        offset: Linear offset applied after the factor when converting raw to
+            physical (physical = raw * factor + offset).
+        minimum: Minimum physical value (informational, not enforced at runtime).
+        maximum: Maximum physical value (informational, not enforced at runtime).
+        unit: Physical unit string, e.g. ``"km/h"`` or ``"°C"``.
+        value_table: Optional mapping of raw integer values to human-readable
+            names, e.g. ``{0: "Off", 1: "On"}``.
+        comment: Free-text comment or description from the database.
+        is_multiplexer: ``True`` if this signal is the multiplexer selector
+            (carries the mux ID that determines which other signals are active).
+        multiplexer_ids: List of mux IDs for which this signal is active, or
+            ``None`` if the signal is not multiplexed.
+        multiplexer_signal: Name of the multiplexer selector signal that gates
+            this signal, or ``None`` if not applicable.
+    """
+
     name: str = "NewSignal"
     start_bit: int = 0
     bit_length: int = 8
@@ -66,6 +112,21 @@ class DbSignalItem:
 
 @dataclass
 class DbMessageItem:
+    """Editable representation of a CAN message (frame definition).
+
+    Attributes:
+        name: Message name as it appears in the database or editor.
+        can_id: 11-bit or 29-bit CAN arbitration ID (frame ID, not extended
+            flag).
+        dlc: Data Length Code — number of data bytes in the frame (0–64 for
+            CAN FD).
+        cycle_time_ms: Nominal transmit period in milliseconds; ``0`` means
+            event-driven / no fixed period.
+        sender: Name of the ECU node that transmits this message.
+        comment: Free-text comment or description from the database.
+        signals: Ordered list of signals packed into this message.
+    """
+
     name: str = "NewMessage"
     can_id: int = 0x100
     dlc: int = 8
@@ -77,7 +138,21 @@ class DbMessageItem:
 
 @dataclass
 class DbFileItem:
-    """Top-level grouping node representing a DBC/database file."""
+    """Top-level grouping node representing a DBC/database file.
+
+    One ``DbFileItem`` is created per imported file (or per manually created
+    database group).  All messages belonging to that file are stored in
+    ``messages``.
+
+    Attributes:
+        filename: Display name shown in the Name column at the file level
+            (typically the base name of the source file).
+        bus: CAN bus number this database is associated with (1-based).
+        messages: Ordered list of message definitions belonging to this file.
+        source_path: Absolute path of the original DBC/KCD/ODX file that was
+            imported; empty string for databases created manually in the editor.
+    """
+
     filename: str = "Untitled"
     bus: int = 1
     messages: list[DbMessageItem] = field(default_factory=list)
@@ -85,7 +160,24 @@ class DbFileItem:
 
 
 def _encode_id(file_row: int = -1, msg_row: int = -1) -> int:
-    """Encode tree position into an internalId."""
+    """Encode tree position into an internalId integer.
+
+    The scheme stores both coordinates in a single ``int`` that fits inside
+    Qt's ``internalId()`` field (which is a ``quintptr``):
+
+    * ``file_row < 0`` → file-level sentinel (returns ``_FILE_LEVEL == 0``)
+    * ``msg_row < 0``  → message-level encoding (file index in upper 16 bits)
+    * both >= 0        → signal-level encoding (file + message indices packed)
+
+    Args:
+        file_row: Zero-based index of the parent file row, or ``-1`` for the
+            file level itself.
+        msg_row: Zero-based index of the parent message row, or ``-1`` for the
+            message level.
+
+    Returns:
+        Packed integer suitable for use as a ``QModelIndex`` ``internalId``.
+    """
     if file_row < 0:
         return _FILE_LEVEL
     if msg_row < 0:
@@ -104,13 +196,46 @@ def _decode_id(iid: int) -> tuple[int, int]:
 
 
 class DatabaseModel(QAbstractItemModel):
+    """Three-level tree model representing CAN database content.
+
+    Level 0 (root children) — :class:`DbFileItem` — one per source file.
+    Level 1 — :class:`DbMessageItem` — messages within a file.
+    Level 2 — :class:`DbSignalItem` — signals within a message.
+
+    The internal-ID scheme encodes ``(file_row, msg_row)`` into a single
+    integer so that all three levels can be distinguished without a separate
+    parent pointer:
+
+    - File nodes: ``file_row == -1, msg_row == -1``
+    - Message nodes: ``file_row >= 0, msg_row == -1``
+    - Signal nodes: ``file_row >= 0, msg_row >= 0``
+    """
+
     def __init__(self, parent=None):
+        """Initialise the DatabaseModel with an empty file list.
+
+        Args:
+            parent: Optional Qt parent object.
+        """
         super().__init__(parent)
         self._items: list[DbFileItem] = []
 
     # -- QAbstractItemModel required overrides --
 
     def index(self, row, column, parent=QModelIndex()):
+        """Return a model index for the given row/column under *parent*.
+
+        Encodes the tree level into the internal ID so the parent path can be
+        decoded later without traversing the node tree.
+
+        Args:
+            row: Zero-based child row.
+            column: Zero-based column.
+            parent: Parent index; invalid means the file (root) level.
+
+        Returns:
+            Valid :class:`QModelIndex`, or invalid if out of range.
+        """
         if not self.hasIndex(row, column, parent):
             return QModelIndex()
         if not parent.isValid():
@@ -126,6 +251,14 @@ class DatabaseModel(QAbstractItemModel):
         return QModelIndex()
 
     def parent(self, index: QModelIndex):
+        """Return the parent index of *index*.
+
+        Args:
+            index: Index whose parent should be found.
+
+        Returns:
+            Parent :class:`QModelIndex`, or an invalid index for file-level rows.
+        """
         if not index.isValid():
             return QModelIndex()
         file_row, msg_row = _decode_id(index.internalId())
@@ -139,6 +272,15 @@ class DatabaseModel(QAbstractItemModel):
         return self.createIndex(msg_row, 0, _encode_id(file_row))
 
     def rowCount(self, parent=QModelIndex()):
+        """Return the number of children under *parent*.
+
+        Args:
+            parent: Invalid index → number of file nodes.  File index → number
+                of message children.  Message index → number of signal children.
+
+        Returns:
+            Child row count, or 0 for signal-level parents.
+        """
         if not parent.isValid():
             return len(self._items)
         file_row, msg_row = _decode_id(parent.internalId())
@@ -157,6 +299,14 @@ class DatabaseModel(QAbstractItemModel):
         return 0
 
     def columnCount(self, parent=QModelIndex()):
+        """Return the fixed number of columns defined by ``COLUMNS``.
+
+        Args:
+            parent: Unused.
+
+        Returns:
+            Total number of columns (``len(COLUMNS)``).
+        """
         return len(COLUMNS)
 
     def _get_level(self, index: QModelIndex) -> int:
@@ -177,11 +327,34 @@ class DatabaseModel(QAbstractItemModel):
         return file_row
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        """Return column header labels for the horizontal header.
+
+        Args:
+            section: Zero-based column index.
+            orientation: Only horizontal headers are populated.
+            role: Only ``DisplayRole`` is handled.
+
+        Returns:
+            Column name string, or ``None`` for unhandled orientation/role.
+        """
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
             return COLUMNS[section]
         return None
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
+        """Return display, edit, or check-state data for the given cell.
+
+        File rows expose Filename (col 0) and Bus (col 1).  Message rows expose
+        Name, ID (hex), DLC, Cycle Time, and Comment.  Signal rows expose all
+        signal attribute columns; the Signed column uses ``CheckStateRole``.
+
+        Args:
+            index: Cell position in the model.
+            role: Qt data role determining which aspect of the cell is returned.
+
+        Returns:
+            Cell value, or ``None`` for unhandled roles or unsupported columns.
+        """
         if not index.isValid():
             return None
         col = index.column()
@@ -250,6 +423,19 @@ class DatabaseModel(QAbstractItemModel):
         return None
 
     def flags(self, index: QModelIndex):
+        """Return interaction flags appropriate to the tree level and column.
+
+        File-level editable columns: 0 (Filename), 1 (Bus).
+        Message-level editable columns: 0 (Name), 2 (ID), 3 (DLC), 4 (Cycle), 16 (Comment).
+        Signal-level: Signed (col 8) is checkable; all other signal attribute
+        columns are inline-editable.
+
+        Args:
+            index: Cell position in the model.
+
+        Returns:
+            Combined :class:`Qt.ItemFlag` value for the cell.
+        """
         flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
         if not index.isValid():
             return flags
@@ -270,6 +456,16 @@ class DatabaseModel(QAbstractItemModel):
         return flags
 
     def setData(self, index: QModelIndex, value, role=Qt.ItemDataRole.EditRole):
+        """Dispatch a write to the file, message, or signal level handler.
+
+        Args:
+            index: Cell position to update.
+            value: New value to store.
+            role: ``EditRole`` or ``CheckStateRole`` (Signed column).
+
+        Returns:
+            ``True`` if the write was accepted, ``False`` otherwise.
+        """
         if not index.isValid():
             return False
         level = self._get_level(index)
@@ -280,6 +476,16 @@ class DatabaseModel(QAbstractItemModel):
         return self._set_signal_data(index, value, role)
 
     def _set_file_data(self, index: QModelIndex, value, role):
+        """Handle writes to file-level cells (Filename and Bus columns).
+
+        Args:
+            index: File-level cell position.
+            value: New value to store.
+            role: Must be ``EditRole``; other roles are rejected.
+
+        Returns:
+            ``True`` if the write was accepted, ``False`` otherwise.
+        """
         if role != Qt.ItemDataRole.EditRole:
             return False
         row = index.row()
@@ -301,6 +507,18 @@ class DatabaseModel(QAbstractItemModel):
         return True
 
     def _set_message_data(self, index: QModelIndex, value, role):
+        """Handle writes to message-level cells (Name, ID, DLC, Cycle Time, Comment).
+
+        Parses hex IDs via :func:`_parse_hex` and clamps DLC to 0–64.
+
+        Args:
+            index: Message-level cell position.
+            value: New value to store.
+            role: Must be ``EditRole``; other roles are rejected.
+
+        Returns:
+            ``True`` if the write was accepted, ``False`` otherwise.
+        """
         if role != Qt.ItemDataRole.EditRole:
             return False
         file_row, _ = _decode_id(index.internalId())
@@ -337,6 +555,20 @@ class DatabaseModel(QAbstractItemModel):
         return True
 
     def _set_signal_data(self, index: QModelIndex, value, role):
+        """Handle writes to signal-level cells.
+
+        Supports ``CheckStateRole`` for the Signed column and ``EditRole`` for
+        all other editable signal attributes (start bit, bit length, byte order,
+        factor, offset, min/max, unit, mux, value table, comment).
+
+        Args:
+            index: Signal-level cell position.
+            value: New value to store.
+            role: ``EditRole`` or ``CheckStateRole`` (Signed column).
+
+        Returns:
+            ``True`` if the write was accepted, ``False`` otherwise.
+        """
         file_row, msg_row = _decode_id(index.internalId())
         if file_row >= len(self._items):
             return False
@@ -453,6 +685,18 @@ class DatabaseModel(QAbstractItemModel):
         return child_row
 
     def add_signal(self, file_row: int, msg_row: int, sig: DbSignalItem | None = None) -> int:
+        """Add a signal to a message and emit Qt insert notifications.
+
+        Args:
+            file_row: Zero-based file index.
+            msg_row: Zero-based message index within the file.
+            sig: :class:`DbSignalItem` to add.  A blank signal is created when
+                ``None``.
+
+        Returns:
+            Zero-based child row of the new signal, or ``-1`` if indices are
+            out of range.
+        """
         if file_row < 0 or file_row >= len(self._items):
             return -1
         msgs = self._items[file_row].messages
@@ -548,6 +792,13 @@ class DatabaseModel(QAbstractItemModel):
             self.endMoveRows()
 
     def remove_row(self, index: QModelIndex):
+        """Remove the node at *index* (file, message, or signal).
+
+        Does nothing if *index* is invalid or out of range.
+
+        Args:
+            index: Model index of the node to remove.
+        """
         if not index.isValid():
             return
         level = self._get_level(index)
@@ -637,11 +888,27 @@ class DatabaseModel(QAbstractItemModel):
 
     @property
     def items(self) -> list[DbFileItem]:
+        """Direct reference to the internal list of file-level items.
+
+        Returns:
+            Mutable list of :class:`DbFileItem` objects in display order.
+        """
         return self._items
 
     # -- Serialization --
 
     def to_dict(self, manual_only: bool = False) -> list[dict]:
+        """Serialize the model to a list of file-entry dicts for project persistence.
+
+        Args:
+            manual_only: When ``True``, only manually created databases (those
+                without a ``source_path``, i.e. not imported from a DBC file)
+                are included.
+
+        Returns:
+            List of dicts, each with keys ``filename``, ``bus``, and
+            ``messages`` (each message having a ``signals`` list).
+        """
         result = []
         for fitem in self._items:
             if manual_only and fitem.source_path:
@@ -689,6 +956,11 @@ class DatabaseModel(QAbstractItemModel):
         return result
 
     def from_dict(self, data: list[dict]):
+        """Load the model from a list of file-entry dicts, replacing existing content.
+
+        Args:
+            data: List of file-entry dicts as returned by :meth:`to_dict`.
+        """
         self.beginResetModel()
         self._items.clear()
         for file_data in data:
@@ -916,6 +1188,14 @@ def _parse_mux(text: str) -> tuple[bool, list[int] | None] | None:
 
 
 def _parse_hex(text: str) -> int | None:
+    """Parse a hex string (with or without ``0x`` prefix) to an integer.
+
+    Args:
+        text: Hex string to parse (e.g. ``"0x1A3"`` or ``"1A3"``).
+
+    Returns:
+        Integer value, or ``None`` if the string is not a valid hex number.
+    """
     text = text.strip()
     if text.startswith("0x") or text.startswith("0X"):
         text = text[2:]

@@ -1,3 +1,20 @@
+"""Qt tree-table model for outgoing (TX) CAN messages and their decoded signals.
+
+The model uses a two-level tree:
+
+- Top-level rows represent TxMessageItem objects (one per configured TX message).
+- Child rows beneath each message represent TxSignalItem objects decoded from
+  the DBC database via SignalDecoder.
+
+Internal pointer encoding (same scheme as RxMessageModel):
+
+- Top-level rows: ``internalId == 0`` (``_TOP_LEVEL``).
+- Signal child rows: ``internalId == parent_row + 1``.
+
+Editing a signal's value field re-encodes all signals via SignalDecoder and
+redraws the parent row's hex data column so the two views stay in sync.
+"""
+
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import Qt, QAbstractItemModel, QModelIndex, QTimer
@@ -12,6 +29,17 @@ _TOP_LEVEL = 0
 
 @dataclass
 class TxSignalItem:
+    """Mutable state for a single DBC signal belonging to a TX message.
+
+    Attributes:
+        name: Signal name as defined in the DBC database.
+        value: Current physical value; may be a float, int, or enum string.
+        unit: Physical unit string, e.g. ``"km/h"``.
+        is_multiplexer: True when this signal is the multiplexer selector (``[M]``).
+        multiplexer_ids: List of mux IDs this signal belongs to (``[m…]``),
+            or ``None`` for non-multiplexed signals.
+    """
+
     name: str = ""
     value: object = 0  # float, int, or str
     unit: str = ""
@@ -21,6 +49,26 @@ class TxSignalItem:
 
 @dataclass
 class TxMessageItem:
+    """Mutable configuration for a single TX CAN message row.
+
+    Attributes:
+        bus: CAN channel number (1-based) on which to transmit.
+        can_id: CAN arbitration ID.
+        is_extended_id: True for 29-bit extended IDs.
+        frame_type: Frame type string, e.g. ``"Data"`` or ``"Remote"``.
+        length: Payload byte length (0–64).
+        symbol: DBC message name resolved from the database, if available.
+        raw_data: Current payload as a mutable bytearray.
+        cycle_time_ms: Periodic transmission interval in milliseconds.
+        cycle_enabled: True when periodic transmission is active.
+        count: Number of times this message has been transmitted.
+        trigger: Trigger mode label, e.g. ``"Time"`` or ``"Wait"``.
+        creator: Origin label, e.g. ``"User"`` or a script plugin name.
+        signals: Decoded signal children; rebuilt whenever the CAN-ID changes.
+        last_sent_data: Most-recently transmitted payload supplied by a script
+            plugin for display purposes only; does not affect raw_data.
+    """
+
     bus: int = 1
     can_id: int = 0
     is_extended_id: bool = False
@@ -42,6 +90,14 @@ COLUMNS = ["Bus", "ID (hex)", "Ext", "Type", "Length", "Symbol",
 
 
 def _mux_prefix(sig: TxSignalItem) -> str:
+    """Return the multiplexing role prefix string for a signal's display name.
+
+    Args:
+        sig: The signal whose multiplexing role is inspected.
+    Returns:
+        ``"[M] "`` for the mux selector, ``"[m<ids>] "`` for muxed signals,
+        or ``""`` for plain signals.
+    """
     if sig.is_multiplexer:
         return "[M] "
     if sig.multiplexer_ids is not None:
@@ -50,18 +106,53 @@ def _mux_prefix(sig: TxSignalItem) -> str:
 
 
 class TxMessageModel(QAbstractItemModel):
+    """Qt tree-table model managing transmit CAN messages and their DBC signals.
+
+    Top-level rows are TxMessageItem objects; each may have TxSignalItem children
+    decoded from the DBC database.  Editing a signal value re-encodes via
+    SignalDecoder so that raw_data always reflects the current physical values.
+
+    The internal-pointer scheme encodes parent row membership:
+
+    - ``internalId == 0`` — top-level message row.
+    - ``internalId == parent_row + 1`` — signal child of ``parent_row``.
+    """
+
     def __init__(self, parent=None):
+        """Initialise the model with an empty message list.
+
+        Args:
+            parent: Optional Qt parent object.
+        """
         super().__init__(parent)
         self._items: list[TxMessageItem] = []
         self._decoder: SignalDecoder | None = None
         self._pending_last_sent: dict[int, bytes] = {}
 
     def set_decoder(self, decoder: SignalDecoder):
+        """Attach the signal decoder used for DBC look-ups and encoding.
+
+        Args:
+            decoder: Fully initialised SignalDecoder instance.
+        """
         self._decoder = decoder
 
     # -- QAbstractItemModel required overrides --
 
     def index(self, row, column, parent=QModelIndex()):
+        """Return a model index for the given row/column under *parent*.
+
+        Top-level message rows use ``internalId == _TOP_LEVEL``; signal child
+        rows encode their parent row as ``internalId = parent_row + 1``.
+
+        Args:
+            row: Zero-based child row.
+            column: Zero-based column.
+            parent: Parent index; invalid means the root (message level).
+
+        Returns:
+            Valid :class:`QModelIndex`, or invalid if out of range.
+        """
         if not self.hasIndex(row, column, parent):
             return QModelIndex()
         if not parent.isValid():
@@ -70,6 +161,15 @@ class TxMessageModel(QAbstractItemModel):
             return self.createIndex(row, column, parent.row() + 1)
 
     def parent(self, index: QModelIndex):
+        """Return the parent index of a signal child row.
+
+        Args:
+            index: Index whose parent should be found.
+
+        Returns:
+            The parent message :class:`QModelIndex` for signal rows, or an
+            invalid index for top-level message rows.
+        """
         if not index.isValid():
             return QModelIndex()
         ptr = index.internalId()
@@ -79,6 +179,15 @@ class TxMessageModel(QAbstractItemModel):
         return self.createIndex(parent_row, 0, _TOP_LEVEL)
 
     def rowCount(self, parent=QModelIndex()):
+        """Return the number of rows under *parent*.
+
+        Args:
+            parent: Invalid index → number of top-level messages.
+                Valid top-level index → number of decoded signals for that message.
+
+        Returns:
+            Row count, or 0 for signal-level parents.
+        """
         if not parent.isValid():
             return len(self._items)
         if parent.internalId() == _TOP_LEVEL and 0 <= parent.row() < len(self._items):
@@ -86,17 +195,57 @@ class TxMessageModel(QAbstractItemModel):
         return 0
 
     def columnCount(self, parent=QModelIndex()):
+        """Return the fixed number of columns defined by ``COLUMNS``.
+
+        Args:
+            parent: Unused.
+
+        Returns:
+            Total number of columns (``len(COLUMNS)``).
+        """
         return len(COLUMNS)
 
     def _is_top_level(self, index: QModelIndex) -> bool:
+        """Return ``True`` if *index* refers to a top-level message row.
+
+        Args:
+            index: The model index to check.
+
+        Returns:
+            ``True`` for message rows, ``False`` for signal child rows.
+        """
         return index.internalId() == _TOP_LEVEL
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        """Return column header labels for the horizontal header.
+
+        Args:
+            section: Zero-based column index.
+            orientation: Only horizontal headers are populated.
+            role: Only ``DisplayRole`` is handled.
+
+        Returns:
+            Column name string, or ``None`` for unhandled orientation/role.
+        """
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
             return COLUMNS[section]
         return None
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
+        """Return display, edit, or check-state data for the given cell.
+
+        For top-level rows, the Extended (col 2) and Cycle-Enable (col 7)
+        columns use ``CheckStateRole``; all other supported columns use
+        ``DisplayRole``/``EditRole``.  Signal child rows expose only the Name
+        (col 5) and Value (col 6) columns.
+
+        Args:
+            index: Cell position in the model.
+            role: Qt data role determining which aspect of the cell is returned.
+
+        Returns:
+            Cell value, or ``None`` for unhandled roles or unsupported columns.
+        """
         if not index.isValid():
             return None
         col = index.column()
@@ -151,6 +300,18 @@ class TxMessageModel(QAbstractItemModel):
         return None
 
     def flags(self, index: QModelIndex):
+        """Return interaction flags for the given cell.
+
+        Top-level columns 2 (Ext) and 7 (Cycle Enable) are checkable.  Columns
+        0, 1, 4, 5, 6, 7 are inline-editable.  Signal child column 6 (Value)
+        is editable.
+
+        Args:
+            index: Cell position in the model.
+
+        Returns:
+            Combined :class:`Qt.ItemFlag` value for the cell.
+        """
         flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
         if not index.isValid():
             return flags
@@ -168,6 +329,16 @@ class TxMessageModel(QAbstractItemModel):
         return flags
 
     def setData(self, index: QModelIndex, value, role=Qt.ItemDataRole.EditRole):
+        """Dispatch a write to the appropriate top-level or signal handler.
+
+        Args:
+            index: Cell position to update.
+            value: New value to store.
+            role: ``EditRole`` or ``CheckStateRole``.
+
+        Returns:
+            ``True`` if the write was accepted, ``False`` otherwise.
+        """
         if not index.isValid():
             return False
 
@@ -177,6 +348,20 @@ class TxMessageModel(QAbstractItemModel):
             return self._set_signal_data(index, value, role)
 
     def _set_top_level_data(self, index, value, role):
+        """Handle writes to top-level message row cells.
+
+        Processes checkboxes for the Ext and Cycle Enable columns, and inline
+        edits for Bus, CAN-ID, DLC, Symbol, Data, and Cycle Time.  CAN-ID and
+        Symbol changes trigger a DBC look-up and signal rebuild.
+
+        Args:
+            index: Top-level cell position.
+            value: New value to store.
+            role: ``EditRole`` or ``CheckStateRole``.
+
+        Returns:
+            ``True`` if the write was accepted, ``False`` otherwise.
+        """
         if index.row() >= len(self._items):
             return False
         item = self._items[index.row()]
@@ -263,6 +448,20 @@ class TxMessageModel(QAbstractItemModel):
         return False
 
     def _set_signal_data(self, index, value, role):
+        """Handle writes to signal child row cells (column 6 only).
+
+        Parses the entered value, strips a trailing unit string if present,
+        updates the signal, re-encodes all active signals into ``raw_data``,
+        then redecodes so displayed values snap to quantized DBC values.
+
+        Args:
+            index: Signal child cell position (must be column 6).
+            value: New value string (may include unit suffix).
+            role: Must be ``EditRole``; other roles are rejected.
+
+        Returns:
+            ``True`` if the write was accepted, ``False`` otherwise.
+        """
         if role != Qt.ItemDataRole.EditRole or index.column() != 6:
             return False
 
@@ -431,6 +630,11 @@ class TxMessageModel(QAbstractItemModel):
     # -- Public API --
 
     def add_empty_message(self, bus: int = 1):
+        """Append a new blank TX message with 8-byte zero payload.
+
+        Args:
+            bus: CAN channel number (1-based) for the new message.
+        """
         item = TxMessageItem(
             bus=bus,
             can_id=0,
@@ -441,6 +645,14 @@ class TxMessageModel(QAbstractItemModel):
         self.add_message(item)
 
     def add_message(self, item: TxMessageItem, resolve: bool = True):
+        """Append a TxMessageItem to the model and rebuild its signal children.
+
+        Args:
+            item: :class:`TxMessageItem` to add.
+            resolve: When ``True``, apply DBC info (DLC, cycle time, initial
+                payload) to the item before inserting.  Set to ``False`` when
+                adding a pre-configured item that should not be overwritten.
+        """
         row = len(self._items)
         self.beginInsertRows(QModelIndex(), row, row)
         self._resolve_from_db(item, override=resolve)
@@ -450,17 +662,32 @@ class TxMessageModel(QAbstractItemModel):
         self._rebuild_signals(row)
 
     def clear(self):
+        """Remove all TX messages and reset the model."""
         self.beginResetModel()
         self._items.clear()
         self.endResetModel()
 
     def remove_message(self, row: int):
+        """Remove the message at the given row index.
+
+        Does nothing if *row* is out of range.
+
+        Args:
+            row: Zero-based row index of the message to remove.
+        """
         if 0 <= row < len(self._items):
             self.beginRemoveRows(QModelIndex(), row, row)
             self._items.pop(row)
             self.endRemoveRows()
 
     def move_up(self, row: int):
+        """Move the message at *row* one position up.
+
+        Does nothing if *row* is already at the top or out of range.
+
+        Args:
+            row: Zero-based row index to move.
+        """
         if row <= 0 or row >= len(self._items):
             return
         self.beginMoveRows(QModelIndex(), row, row, QModelIndex(), row - 1)
@@ -468,6 +695,13 @@ class TxMessageModel(QAbstractItemModel):
         self.endMoveRows()
 
     def move_down(self, row: int):
+        """Move the message at *row* one position down.
+
+        Does nothing if *row* is already at the bottom or out of range.
+
+        Args:
+            row: Zero-based row index to move.
+        """
         if row < 0 or row >= len(self._items) - 1:
             return
         self.beginMoveRows(QModelIndex(), row, row, QModelIndex(), row + 2)
@@ -475,6 +709,14 @@ class TxMessageModel(QAbstractItemModel):
         self.endMoveRows()
 
     def get_item(self, row: int) -> TxMessageItem | None:
+        """Return the :class:`TxMessageItem` at *row*, or ``None`` if out of range.
+
+        Args:
+            row: Zero-based row index.
+
+        Returns:
+            :class:`TxMessageItem` or ``None``.
+        """
         if 0 <= row < len(self._items):
             return self._items[row]
         return None
@@ -507,6 +749,11 @@ class TxMessageModel(QAbstractItemModel):
 
     @property
     def items(self) -> list[TxMessageItem]:
+        """Direct reference to the internal list of TX message items.
+
+        Returns:
+            Mutable list of :class:`TxMessageItem` objects in display order.
+        """
         return self._items
 
     def clear_counts(self):
@@ -528,6 +775,13 @@ class TxMessageModel(QAbstractItemModel):
                 QTimer.singleShot(50, self._flush_last_sent)
 
     def _flush_last_sent(self):
+        """Apply coalesced ``last_sent_data`` updates and redecode affected rows.
+
+        Drains ``_pending_last_sent``, writes the latest payload to each item,
+        emits ``dataChanged`` for the Data column, and redecodes signal children
+        so displayed values reflect what was actually transmitted.  If new
+        updates arrived during the flush another one-shot timer is scheduled.
+        """
         pending = self._pending_last_sent
         self._pending_last_sent = {}
         for row, data in pending.items():
@@ -540,6 +794,11 @@ class TxMessageModel(QAbstractItemModel):
             QTimer.singleShot(50, self._flush_last_sent)
 
     def increment_count(self, row: int):
+        """Increment the send counter for *row* and emit ``dataChanged``.
+
+        Args:
+            row: Zero-based row index of the message whose counter to increment.
+        """
         if 0 <= row < len(self._items):
             self._items[row].count += 1
             idx = self.index(row, 8)  # Count column

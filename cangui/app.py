@@ -34,6 +34,7 @@ def _prepare_theme() -> str:
     )
 
     def _url(p: Path) -> str:
+        """Convert a Path to a forward-slash string safe for use in CSS url() values."""
         return str(p).replace("\\", "/")
 
     return (
@@ -44,6 +45,13 @@ def _prepare_theme() -> str:
 
 
 def run():
+    """Launch the cangui application.
+
+    Creates the ``QApplication``, applies the Fusion style and light theme,
+    shows :class:`~cangui.ui_main_window.MainWindow`, and optionally opens a
+    project file passed as the first command-line argument.  Blocks until the
+    window is closed, then exits the process.
+    """
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setStyleSheet(_prepare_theme())

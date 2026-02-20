@@ -1,3 +1,10 @@
+"""Script plugin loader for per-frame CAN RX/TX processing hooks.
+
+Plugins are plain Python files with a ``.script.py`` extension that may
+define ``process_rx``, ``process_tx``, and/or ``init`` functions.  Loaded
+via :class:`ScriptPlugin`; the ``process_rx`` callable is installed as the
+:class:`~cangui.service_message_dispatcher.MessageDispatcher` RX hook.
+"""
 import importlib.util
 from pathlib import Path
 from typing import Callable
@@ -33,6 +40,7 @@ class ScriptPlugin:
     """
 
     def __init__(self):
+        """Initialise the plugin loader in the unloaded state."""
         self._path: Path | None = None
         self._init_func: Callable | None = None
         self._process_tx: Callable | None = None
@@ -40,13 +48,26 @@ class ScriptPlugin:
 
     @property
     def path(self) -> Path | None:
+        """Absolute path of the loaded plugin file, or ``None`` when unloaded."""
         return self._path
 
     @property
     def is_loaded(self) -> bool:
+        """``True`` when at least one of ``process_tx`` or ``process_rx`` is available."""
         return self._process_tx is not None or self._process_rx is not None
 
     def load(self, path: str | Path):
+        """Load a script plugin file and extract its hook functions.
+
+        Args:
+            path: Path to the ``.script.py`` file.
+
+        Raises:
+            FileNotFoundError: If *path* does not exist.
+            ImportError: If the module cannot be loaded by importlib.
+            AttributeError: If neither ``process_tx`` nor ``process_rx`` is defined.
+            TypeError: If any defined hook attribute is not callable.
+        """
         path = Path(path)
         if not path.is_file():
             raise FileNotFoundError(f"Script plugin not found: {path}")
@@ -79,6 +100,7 @@ class ScriptPlugin:
         self._process_rx = rx
 
     def unload(self):
+        """Remove all hook references and mark the plugin as unloaded."""
         self._path = None
         self._init_func = None
         self._process_tx = None

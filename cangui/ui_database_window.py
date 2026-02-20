@@ -5,7 +5,7 @@ import cantools
 
 from PySide6.QtCore import Qt, Signal, QModelIndex, QTimer
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QToolBar, QHeaderView,
+    QWidget, QToolBar, QHeaderView,
     QFileDialog, QMessageBox, QStyledItemDelegate, QComboBox,
 )
 from PySide6.QtGui import QAction
@@ -13,6 +13,7 @@ from PySide6.QtGui import QAction
 from cangui.model_database import DatabaseModel, COL_BYTE_ORDER
 from cangui.ui_tab_navigation import TabTreeView
 from cangui.icons import icon as _icon
+from cangui.ui_base_dock_window import BaseDockWindow
 
 # Widths for columns 1-15 of the database tree (col 0 = Name, sized dynamically;
 # col 16 = Comment, stretches as last section).
@@ -36,22 +37,47 @@ _DB_COL_WIDTHS = {
 
 
 class ByteOrderDelegate(QStyledItemDelegate):
+    """Dropdown delegate for the Byte Order column (little_endian / big_endian)."""
+
     def createEditor(self, parent, option, index):
+        """Return a QComboBox pre-populated with the two byte-order choices.
+
+        Args:
+            parent: Parent widget for the combo box.
+            option: Style option (unused).
+            index: Model index of the cell being edited (unused).
+
+        Returns:
+            A QComboBox with ``"little_endian"`` and ``"big_endian"`` items.
+        """
         combo = QComboBox(parent)
         combo.addItems(["little_endian", "big_endian"])
         return combo
 
     def setEditorData(self, editor, index):
+        """Select the current byte-order value in the combo-box editor.
+
+        Args:
+            editor: The QComboBox created by :meth:`createEditor`.
+            index: Model index whose edit-role data should be reflected.
+        """
         value = index.data(Qt.ItemDataRole.EditRole)
         idx = editor.findText(value)
         if idx >= 0:
             editor.setCurrentIndex(idx)
 
     def setModelData(self, editor, model, index):
+        """Write the selected byte-order string back to the model.
+
+        Args:
+            editor: The QComboBox whose current text should be committed.
+            model: The item model owning the cell.
+            index: Model index of the cell to update.
+        """
         model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
 
 
-class DatabaseWindow(QWidget):
+class DatabaseWindow(BaseDockWindow):
     """Database editor tab — view/edit CAN message and signal definitions."""
 
     TITLE = "Database"
@@ -63,10 +89,17 @@ class DatabaseWindow(QWidget):
     add_to_tx_requested = Signal(int, int, bool, str, int, int)  # can_id, dlc, is_extended, symbol, cycle_ms, bus
 
     def __init__(self, parent=None):
-        super().__init__(parent)
+        """Build the DatabaseWindow with its toolbar and tree view.
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        Constructs all toolbar actions (add database/message/signal, remove,
+        move up/down, import/export DBC/JSON, add to Watch/Plot/TX), wires
+        model change signals to ``database_changed``, and schedules an initial
+        column resize.
+
+        Args:
+            parent: Optional parent QWidget.
+        """
+        super().__init__(parent)
 
         # Toolbar
         toolbar = QToolBar()
@@ -133,7 +166,7 @@ class DatabaseWindow(QWidget):
         add_tx.triggered.connect(self._on_add_to_tx)
         toolbar.addAction(add_tx)
 
-        layout.addWidget(toolbar)
+        self._layout.addWidget(toolbar)
 
         # Model + TreeView
         self._model = DatabaseModel()
@@ -154,7 +187,7 @@ class DatabaseWindow(QWidget):
         header.setStretchLastSection(True)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
 
-        layout.addWidget(self._tree)
+        self._layout.addWidget(self._tree)
         QTimer.singleShot(0, self._resize_columns)
 
     def _resize_columns(self):
@@ -170,14 +203,22 @@ class DatabaseWindow(QWidget):
 
     @property
     def primary_view(self):
+        """The database tree view that receives keyboard focus."""
         return self._tree
 
     # -- Toolbar actions --
 
     def _on_add_database(self):
+        """Add a new empty database file entry to the model."""
         self._model.add_file()
 
     def _on_add_message(self):
+        """Add a new blank message to the file containing the current selection.
+
+        If nothing is selected, the message is appended to the last file (or a
+        new one is created).  If a file node is selected, the tree is expanded
+        to show the new child.
+        """
         index = self._tree.currentIndex()
         if not index.isValid():
             # Add to last file, or create one
@@ -198,6 +239,12 @@ class DatabaseWindow(QWidget):
             self._model.add_message(file_row)
 
     def _on_add_signal(self):
+        """Add a new blank signal to the message containing the current selection.
+
+        Shows an information dialog if no message context can be determined.
+        Expands the file and message nodes so the new signal is immediately
+        visible.
+        """
         index = self._tree.currentIndex()
         if not index.isValid():
             QMessageBox.information(self, "Add Signal", "Select a message first.")
@@ -214,12 +261,14 @@ class DatabaseWindow(QWidget):
         self._tree.expand(msg_idx)
 
     def _on_remove_selected(self):
+        """Remove the currently selected file, message, or signal node."""
         index = self._tree.currentIndex()
         if not index.isValid():
             return
         self._model.remove_row(index)
 
     def _on_move_up(self):
+        """Move the selected node one row up and follow the selection."""
         index = self._tree.currentIndex()
         if not index.isValid():
             return
@@ -230,6 +279,7 @@ class DatabaseWindow(QWidget):
         self._tree.setCurrentIndex(new_index)
 
     def _on_move_down(self):
+        """Move the selected node one row down and follow the selection."""
         index = self._tree.currentIndex()
         if not index.isValid():
             return
@@ -240,6 +290,7 @@ class DatabaseWindow(QWidget):
         self._tree.setCurrentIndex(new_index)
 
     def _on_import_dbc(self):
+        """Open a file dialog and import a DBC file, showing an error on failure."""
         path, _ = QFileDialog.getOpenFileName(
             self, "Import DBC", "", "DBC Files (*.dbc);;All Files (*)")
         if not path:
@@ -250,6 +301,7 @@ class DatabaseWindow(QWidget):
             QMessageBox.warning(self, "Import Error", f"Failed to import DBC:\n{e}")
 
     def _on_export_dbc(self):
+        """Open a save dialog and export the current database as a DBC file."""
         path, _ = QFileDialog.getSaveFileName(
             self, "Export DBC", "", "DBC Files (*.dbc);;All Files (*)")
         if not path:
@@ -264,6 +316,7 @@ class DatabaseWindow(QWidget):
             QMessageBox.warning(self, "Export Error", f"Failed to export DBC:\n{e}")
 
     def _on_import_json(self):
+        """Open a file dialog and import a .db.json database file."""
         path, _ = QFileDialog.getOpenFileName(
             self, "Import JSON Database", "",
             "JSON Files (*.json *.db.json);;All Files (*)")
@@ -280,6 +333,7 @@ class DatabaseWindow(QWidget):
             QMessageBox.warning(self, "Import Error", f"Failed to import JSON:\n{e}")
 
     def _on_export_json(self):
+        """Open a save dialog and export the database model as a .json file."""
         path, _ = QFileDialog.getSaveFileName(
             self, "Export JSON Database", "",
             "JSON Files (*.json);;All Files (*)")
@@ -294,6 +348,16 @@ class DatabaseWindow(QWidget):
             QMessageBox.warning(self, "Export Error", f"Failed to export JSON:\n{e}")
 
     def _on_add_to_watch(self):
+        """Add the selected signal (or all signals of the selected message) to Watch.
+
+        If a signal row is selected only that signal is added.  If a message
+        row is selected all of its signals are added.  An information dialog
+        is shown if neither could be resolved.
+
+        Emits:
+            add_to_watch_requested: Once per signal with
+                ``(can_id, name, unit, "Db")``.
+        """
         index = self._tree.currentIndex()
         # Signal selected → add that one signal
         result = self._model.get_signal(index)
@@ -311,6 +375,15 @@ class DatabaseWindow(QWidget):
                                 "Select a message or signal.")
 
     def _on_add_to_plot(self):
+        """Add the selected signal (or all signals of the selected message) to Plot.
+
+        If a signal row is selected only that signal is added.  If a message
+        row is selected all of its signals are added.  An information dialog
+        is shown if neither could be resolved.
+
+        Emits:
+            add_to_plot_requested: Once per signal with ``(can_id, name, unit)``.
+        """
         index = self._tree.currentIndex()
         # Signal selected → add that one signal
         result = self._model.get_signal(index)
@@ -328,6 +401,15 @@ class DatabaseWindow(QWidget):
                                 "Select a message or signal.")
 
     def _on_add_to_tx(self):
+        """Add the message containing the current selection to the TX list.
+
+        Resolves both message and signal selections to the parent message.
+        Uses the source file's bus number for the new TX entry.
+
+        Emits:
+            add_to_tx_requested: With ``(can_id, dlc, is_extended, name,
+                cycle_ms, bus)`` when a message is successfully resolved.
+        """
         index = self._tree.currentIndex()
         # Resolve to the message regardless of whether a message or signal is selected
         msg = self._model.get_message(index)
@@ -348,6 +430,14 @@ class DatabaseWindow(QWidget):
     # -- DBC import/export --
 
     def import_dbc(self, path: str):
+        """Import a DBC file, append its contents to the model, and emit ``dbc_imported``.
+
+        Args:
+            path: Absolute path to the ``.dbc`` file to import.
+
+        Emits:
+            dbc_imported: With the imported file path on success.
+        """
         db = cantools.database.Database()
         db.add_dbc_file(path)
         filename = Path(path).name
@@ -370,12 +460,22 @@ class DatabaseWindow(QWidget):
         self._model.remove_by_source_path(path)
 
     def export_dbc(self) -> str:
+        """Export the current database as a DBC-format string.
+
+        Returns:
+            DBC content as a text string suitable for writing to a ``.dbc`` file.
+        """
         db = self._model.export_to_cantools()
         return db.as_dbc_string()
 
     # -- Serialization --
 
     def to_dict(self) -> list[dict]:
+        """Serialize the entire database model to a list of file-entry dicts.
+
+        Returns:
+            List of dicts representing all file entries, for project persistence.
+        """
         return self._model.to_dict()
 
     def manual_databases_to_dict(self) -> list[dict]:
@@ -383,6 +483,13 @@ class DatabaseWindow(QWidget):
         return self._model.to_dict(manual_only=True)
 
     def from_dict(self, data: list[dict]):
+        """Load a complete database from a list of file-entry dicts.
+
+        Replaces existing model contents and resizes columns afterward.
+
+        Args:
+            data: List of file-entry dicts as returned by :meth:`to_dict`.
+        """
         self._model.from_dict(data)
         self._resize_columns()
 

@@ -1,3 +1,9 @@
+"""Signal selector widget for adding signals to the Watch or Plot lists.
+
+Provides :class:`SignalSelector`, a searchable tree widget that shows the
+message→signal hierarchy from all loaded DBC databases.  A double-click on a
+signal leaf emits :attr:`~SignalSelector.signal_selected`.
+"""
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLineEdit, QTreeWidget, QTreeWidgetItem,
@@ -15,6 +21,13 @@ class SignalSelector(QWidget):
     signal_selected = Signal(int, str, str)  # arb_id, signal_name, unit
 
     def __init__(self, db_manager: DatabaseManager, parent=None):
+        """Build the selector widget with a search box and signal tree.
+
+        Args:
+            db_manager: The active :class:`~cangui.database_manager.DatabaseManager`
+                whose DBC messages populate the tree.
+            parent: Optional Qt parent widget.
+        """
         super().__init__(parent)
         self._db = db_manager
 
@@ -33,6 +46,7 @@ class SignalSelector(QWidget):
         layout.addWidget(self._tree)
 
     def refresh(self):
+        """Rebuild the tree from the current database state."""
         self._tree.clear()
         for msg in self._db.dbc.messages:
             msg_item = QTreeWidgetItem([f"0x{msg.frame_id:03X} - {msg.name}", ""])
@@ -46,6 +60,11 @@ class SignalSelector(QWidget):
             self._tree.addTopLevelItem(msg_item)
 
     def _apply_filter(self, text: str):
+        """Show only messages/signals whose name contains *text* (case-insensitive).
+
+        Args:
+            text: Filter string from the search box.
+        """
         text = text.lower()
         for i in range(self._tree.topLevelItemCount()):
             msg_item = self._tree.topLevelItem(i)
@@ -62,6 +81,12 @@ class SignalSelector(QWidget):
             msg_item.setHidden(not msg_visible)
 
     def _on_double_click(self, item: QTreeWidgetItem, column: int):
+        """Emit :attr:`signal_selected` when the user double-clicks a signal leaf.
+
+        Args:
+            item: The tree item that was double-clicked.
+            column: Column index (unused).
+        """
         sig_name = item.data(0, 0x101)
         if sig_name is None:
             return  # Clicked a message node, not a signal

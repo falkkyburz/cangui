@@ -1,3 +1,11 @@
+"""Main window module for cangui.
+
+This module defines :class:`MainWindow`, the top-level QMainWindow that owns
+every model, service, worker, and dock/tab window in the application.  It is
+the single point where all subsystems are created, wired together, and torn
+down.
+"""
+
 import sys
 
 from PySide6.QtWidgets import (
@@ -49,9 +57,67 @@ from cangui.worker_trace_player import TracePlayer
 
 
 class MainWindow(QMainWindow):
+    """Central application window that orchestrates all cangui subsystems.
+
+    MainWindow is responsible for creating and owning every model, service,
+    worker, and dock/tab window in the application, and for wiring them
+    together via Qt signals and slots.
+
+    Layout
+    ------
+    The central widget is a horizontal ``QSplitter`` with two panes:
+
+    * **Main pane** (left) — a ``QTabWidget`` containing the
+      Receive/Transmit, Database, Trace, Plot, and Diagnostics tabs.
+    * **Right pane** — a vertical ``QSplitter`` with two further
+      ``QTabWidget`` instances:
+
+      * **Small pane** (top-right): Project Manager and Log tabs.
+      * **List pane** (bottom-right): Watch, Watch DID, DTC, Rx Filter,
+        Plot List, Settings, and Help tabs.
+
+    Services
+    --------
+    * :class:`~cangui.service_can.CanService` — manages CAN bus connections
+      and drives the :class:`~cangui.service_message_dispatcher.MessageDispatcher`.
+    * :class:`~cangui.service_message_dispatcher.MessageDispatcher` — fans
+      received messages out to models and services.
+    * :class:`~cangui.service_plot_data.PlotDataService` — accumulates decoded
+      signal samples for the live plot.
+    * :class:`~cangui.service_plot_trace.PlotTraceService` — records plot
+      traffic to trace files on disk.
+    * :class:`~cangui.service_uds.UdsService` — UDS diagnostic client.
+    * :class:`~cangui.service_workspace.WorkspaceService` — saves/restores
+      splitter sizes and active tabs.
+
+    Workers
+    -------
+    * :class:`~cangui.worker_can_transmitter.CanTransmitter` — periodic TX
+      worker started on the first successful connection.
+    * :class:`~cangui.worker_trace_player.TracePlayer` — replays a loaded
+      trace file through the dispatcher.
+
+    Signals
+    -------
+    _tx_display_update(int, bytes):
+        Emitted from the TX worker thread to update a TX row's displayed data
+        on the GUI thread (queued connection).
+    """
+
     _tx_display_update = Signal(int, bytes)  # (row, actual_data) — cross-thread, queued
 
     def __init__(self, parent=None):
+        """Initialise the main window and all application subsystems.
+
+        Creates every model, service, worker, and child window in dependency
+        order, wires their signals together, builds the 3-pane splitter
+        layout, registers keyboard shortcuts and focus-manager entries, and
+        populates the Help window with the shortcut reference table.
+
+        Args:
+            parent: Optional parent widget; normally ``None`` for a top-level
+                window.
+        """
         super().__init__(parent)
         self.setWindowTitle("cangui")
         screen = QApplication.primaryScreen().availableSize()
@@ -168,6 +234,21 @@ class MainWindow(QMainWindow):
 
 
     def _create_layout(self):
+        """Create all child windows and assemble the 3-pane splitter layout.
+
+        Instantiates every dock/tab window, connects inter-window signals, and
+        places them into three ``QTabWidget`` containers arranged inside a
+        horizontal ``QSplitter`` (main pane on the left, a vertical
+        ``QSplitter`` on the right holding the small pane above the list pane).
+
+        Also creates the :class:`~cangui.service_workspace.WorkspaceService`
+        which is responsible for persisting and restoring splitter proportions
+        and active tab indices.  Default proportional ratios are set for the
+        horizontal splitter (70 / 30), the vertical right splitter (30 / 70),
+        and the internal RX/TX splitter (50 / 33 / 17).
+
+        This method is called once during :meth:`__init__`.
+        """
         # Create windows
         self._rx_tx_win = RxTxWindow(
             self._rx_model, self._tx_model, self._connection_model)
@@ -310,7 +391,25 @@ class MainWindow(QMainWindow):
         self._apply_tab_visibility()
 
     def _create_shortcuts(self):
+        """Register all application-wide keyboard shortcuts.
+
+        Binds ``QShortcut`` instances to the main window for file operations
+        (``Ctrl+S``), view navigation (``Alt+1``–``Alt+8``, ``Ctrl+R``,
+        ``F11``), and trace control (``Ctrl+T``, ``F9``, ``F6``,
+        ``Shift+F9``, ``Shift+F6``).
+
+        This method is called once during :meth:`__init__`.
+        """
         def _shortcut(key, slot):
+            """Register a global keyboard shortcut binding *key* to *slot*.
+
+            Args:
+                key: Key sequence string (e.g. ``"Ctrl+S"``).
+                slot: Callable to invoke when the shortcut is activated.
+
+            Returns:
+                The created :class:`QShortcut` instance.
+            """
             s = QShortcut(QKeySequence(key), self)
             s.activated.connect(slot)
             return s
@@ -341,16 +440,31 @@ class MainWindow(QMainWindow):
     # -- Connection management --
 
     def _add_connection(self):
+        """Add a new empty CAN connection row and switch to the RX/TX tab."""
         self._connection_model.add_empty_row()
         self._main_tabs.setCurrentWidget(self._rx_tx_win)
 
     def _on_connection_status(self, _index: int, status: str):
+        """React to a CAN connection status change.
+
+        Starts the TX transmitter worker and invokes plugin ``init()``
+        callbacks when a connection transitions to the ``"OK"`` state.
+
+        Args:
+            _index: Index of the connection whose status changed (unused).
+            status: New status string; ``"OK"`` indicates a live connection.
+        """
         if status == "OK":
             self._ensure_transmitter()
             self._call_plugin_inits()
 
     def _call_plugin_inits(self):
-        """Pass current active connections to all loaded plugins' init()."""
+        """Pass current active connections to all loaded plugins' ``init()``.
+
+        Builds a list of connection-descriptor dicts from every currently
+        connected bus and forwards it to the script plugin and the
+        diagnostic security (seed-key) plugin if either is loaded.
+        """
         connections = [
             {
                 "interface": conn.config.interface,
@@ -369,7 +483,13 @@ class MainWindow(QMainWindow):
             self._diag_win._security_loader.call_init(connections)
 
     def _ensure_transmitter(self):
-        """Start the TX transmitter if not already running."""
+        """Start the TX transmitter worker if not already running.
+
+        Creates a :class:`~cangui.worker_can_transmitter.CanTransmitter`,
+        wires its ``counts_updated`` signal to the TX model, connects the
+        ``_tx_display_update`` cross-thread signal, and starts the worker
+        thread.  Subsequent calls are no-ops.
+        """
         if self._transmitter is not None:
             return
         self._transmitter = CanTransmitter(self._tx_model, self._send_message, self)
@@ -378,7 +498,22 @@ class MainWindow(QMainWindow):
         self._transmitter.start()
 
     def _send_message(self, msg):
-        """Send a CAN message on the first connected bus."""
+        """Send a CAN message through the appropriate connected bus.
+
+        If a script plugin is loaded its ``apply_tx`` hook is called first,
+        allowing the plugin to modify the outgoing payload.  The message is
+        then dispatched to the bus whose ``bus_number`` matches
+        ``msg.bus``; if no match is found the first connected bus is used as
+        a fallback.
+
+        Args:
+            msg: A :class:`~cangui.can_message.CanMessage` instance to
+                transmit.  ``msg.row`` must be >= 0 for the TX display to
+                update when the plugin modifies the payload.
+
+        Raises:
+            RuntimeError: If no bus is currently connected.
+        """
         if self._script_plugin.is_loaded:
             data = self._script_plugin.apply_tx(msg.arbitration_id, msg.data)
             if data != msg.data:
@@ -399,13 +534,27 @@ class MainWindow(QMainWindow):
     # -- TX management --
 
     def _add_tx_frame(self):
+        """Add a new empty TX message row and focus its CAN-ID cell for editing."""
         buses = [c.config.bus_number for c in self._can_service.connections] or [1]
         self._tx_model.add_empty_message(bus=buses[0])
         self._rx_tx_win.edit_last_tx_can_id()
 
     def _add_db_message_to_tx(self, can_id: int, dlc: int, is_extended: bool,
                               symbol: str, cycle_ms: int, bus: int):
-        """Add a database message to the TX list."""
+        """Add a database-defined message to the TX list and switch to the RX/TX tab.
+
+        If the requested bus number is not among the active connections the
+        first available bus is used instead.  The default cycle time falls
+        back to 100 ms when ``cycle_ms`` is 0.
+
+        Args:
+            can_id: CAN arbitration ID.
+            dlc: Data length code (number of bytes).
+            is_extended: ``True`` for a 29-bit extended CAN ID.
+            symbol: Human-readable message name from the database.
+            cycle_ms: Desired cyclic transmit interval in milliseconds.
+            bus: Target bus number as configured in the connection settings.
+        """
         from cangui.model_tx_message import TxMessageItem
         buses = [c.config.bus_number for c in self._can_service.connections] or [1]
         effective_bus = bus if bus in buses else buses[0]
@@ -423,7 +572,15 @@ class MainWindow(QMainWindow):
     # -- DBC / Database management --
 
     def _on_dbc_imported(self, path: str):
-        """Called when the Database view successfully imports a DBC file."""
+        """Handle a successful DBC import from the Database view.
+
+        Loads the file into the :class:`~cangui.database_manager.DatabaseManager`,
+        registers the path in the project, and refreshes the RX symbol and TX
+        signal decorations.  Displays a warning dialog if loading fails.
+
+        Args:
+            path: Absolute filesystem path to the imported ``.dbc`` file.
+        """
         try:
             self._db_manager.load_file(path)
         except Exception as e:
@@ -464,6 +621,7 @@ class MainWindow(QMainWindow):
     # -- Project management --
 
     def _new_project(self):
+        """Create a new blank project, clearing all models and resetting the title."""
         self._project.new()
         self._db_manager.clear()
         self._rx_model.clear()
@@ -477,6 +635,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("cangui - Untitled")
 
     def _open_project(self):
+        """Open a file dialog and load the selected project file."""
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Project", "", "Project Files (*.json);;All Files (*)")
         if not path:
@@ -623,6 +782,7 @@ class MainWindow(QMainWindow):
             self._save_ratios(self._rx_tx_win.splitter, '_rxtx_ratios')
 
     def _save_project(self):
+        """Save the current project to its existing path, or prompt for one if unsaved."""
         if self._project.path is None:
             self._save_project_as()
             return
@@ -633,6 +793,7 @@ class MainWindow(QMainWindow):
         self._project_win.refresh()
 
     def _save_project_as(self):
+        """Prompt the user for a save path and write the project to that location."""
         path, _ = QFileDialog.getSaveFileName(
             self, "Save Project", "", "Project Files (*.json);;All Files (*)")
         if path:
@@ -694,15 +855,6 @@ class MainWindow(QMainWindow):
                 "bus_number": conn.config.bus_number,
             })
 
-        # UDS config
-        if self._uds_service.is_connected:
-            cfg = self._uds_service.config
-            data.uds_config = {
-                "tx_id": cfg.tx_id,
-                "rx_id": cfg.rx_id,
-                "timeout": cfg.timeout,
-            }
-
         # Rx filters
         data.rx_filters = self._rx_filter_model.to_dicts()
 
@@ -719,6 +871,7 @@ class MainWindow(QMainWindow):
 
 
     def _close_project(self):
+        """Close the current project, clearing all models and resetting the window title."""
         self._project.new()
         self._db_manager.clear()
         self._rx_model.clear()
@@ -732,6 +885,10 @@ class MainWindow(QMainWindow):
     # -- Trace --
 
     def _trace_start(self):
+        """Start trace recording, requiring an already-saved project.
+
+        Logs an error and returns early if the project has not been saved yet.
+        """
         if self._project.path is None:
             self._log_win.append(
                 "ERROR",
@@ -741,10 +898,12 @@ class MainWindow(QMainWindow):
         self._trace_win.set_recording_state(True)
 
     def _trace_pause(self):
+        """Pause the active trace recording."""
         self._trace_model.pause()
         self._trace_win._on_pause()
 
     def _trace_stop(self):
+        """Stop the active trace recording."""
         self._trace_model.stop()
         self._trace_win._on_stop()
 
@@ -778,6 +937,15 @@ class MainWindow(QMainWindow):
         writer.close()
 
     def _load_trace(self, path: str):
+        """Load and begin replaying a trace file through the dispatcher.
+
+        Creates a :class:`~cangui.worker_trace_player.TracePlayer` that feeds
+        played messages to both the TraceModel and the MessageDispatcher so
+        that decoded signal views update during replay.
+
+        Args:
+            path: Absolute path to the trace file to replay.
+        """
         reader = TraceReader(path)
         reader.load()
         if not reader.entries:
@@ -798,6 +966,7 @@ class MainWindow(QMainWindow):
         self._trace_player.start()
 
     def _on_replay_finished(self):
+        """Stop the trace model and reset the replay UI state when playback ends."""
         self._trace_model.stop()
         self._trace_win.set_replay_state(False)
 
@@ -815,6 +984,7 @@ class MainWindow(QMainWindow):
         self._uds_service.connect(bus, config)
 
     def _uds_disconnect(self):
+        """Disconnect the active UDS session."""
         self._uds_service.disconnect()
 
     def _get_raw_bus(self, bus_number: int = 0):
@@ -835,11 +1005,28 @@ class MainWindow(QMainWindow):
     # -- Watch --
 
     def _add_signal_to_watch(self, arb_id: int, signal_name: str, unit: str, direction: str):
+        """Forward a signal addition request to the WatchModel.
+
+        Args:
+            arb_id: CAN arbitration ID of the source message.
+            signal_name: DBC signal name.
+            unit: Physical unit string.
+            direction: ``"Rx"``, ``"Tx"``, or ``"Db"``.
+        """
         self._watch_model.add_watch(arb_id, signal_name, unit=unit, direction=direction)
 
     # -- Plot --
 
     def _on_plot_record_toggled(self, recording: bool):
+        """Start or stop plot data recording and the companion plot trace file.
+
+        When starting, requires a saved project (project path must be set).
+        On start, :class:`~cangui.service_plot_data.PlotDataService` and the
+        plot trace service are both activated.  On stop, both are halted.
+
+        Args:
+            recording: ``True`` to start recording, ``False`` to stop.
+        """
         if recording:
             if self._project.path is None:
                 self._log_win.append(
@@ -863,11 +1050,23 @@ class MainWindow(QMainWindow):
             self._on_plot_record_toggled(True)
 
     def _on_plot_trace_file_changed(self, path: str):
+        """Add a newly created plot trace file to the project and refresh the project view.
+
+        Args:
+            path: Absolute path to the new plot trace file.
+        """
         if path:
             self._project.add_plot_file(path)
             self._project_win.refresh()
 
     def _add_signal_to_plot(self, arb_id: int, signal_name: str, unit: str):
+        """Forward a signal addition request to the PlotListWindow.
+
+        Args:
+            arb_id: CAN arbitration ID of the source message.
+            signal_name: DBC signal name.
+            unit: Physical unit string.
+        """
         self._plot_list_win.add_signal(arb_id, signal_name, unit)
 
     # -- Script / Seed-Key plugins --
@@ -892,6 +1091,11 @@ class MainWindow(QMainWindow):
                 self._attach_odx(path)
 
     def _attach_odx(self, path: str):
+        """Load an ODX/PDX diagnostic database and register it in the project.
+
+        Args:
+            path: Absolute path to the ODX or PDX file to load.
+        """
         try:
             self._db_manager.load_file(path)
             self._project.add_database_file(path)
@@ -901,6 +1105,11 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "ODX Import Error", f"Failed to import ODX:\n{e}")
 
     def _attach_script_plugin(self, path: str):
+        """Load a Python script plugin, wire it as the RX hook, and save it in the project.
+
+        Args:
+            path: Absolute path to the ``.script.py`` plugin file.
+        """
         try:
             self._script_plugin.load(path)
             self._project.set_script_plugin(path)
@@ -912,6 +1121,11 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Script Plugin Error", f"Failed to load plugin:\n{e}")
 
     def _attach_seedkey(self, path: str):
+        """Load a seed-key plugin into the Diagnostic window and save it in the project.
+
+        Args:
+            path: Absolute path to the ``.seedkey.py`` plugin file.
+        """
         try:
             self._diag_win._security_loader.load(path)
             self._project.set_seedkey_file(path)
@@ -963,12 +1177,17 @@ class MainWindow(QMainWindow):
     # -- Misc --
 
     def _toggle_fullscreen(self):
+        """Toggle between fullscreen and normal window mode."""
         if self.isFullScreen():
             self.showNormal()
         else:
             self.showFullScreen()
 
     def _start_vcan(self):
+        """Create and bring up the ``vcan0`` virtual CAN interface via sudo.
+
+        Shows a warning dialog if the modprobe or ip commands fail.
+        """
         import subprocess
         try:
             subprocess.run(["sudo", "modprobe", "vcan"], check=True)
@@ -983,6 +1202,15 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _ratios_from_sizes(sizes: list[int]) -> list[float]:
+        """Convert absolute pixel sizes to fractional ratios that sum to 1.0.
+
+        Args:
+            sizes: List of pane pixel sizes from :meth:`QSplitter.sizes`.
+
+        Returns:
+            List of proportional floats (one per pane).  If the total is zero,
+            equal ratios are returned.
+        """
         total = sum(sizes)
         if total == 0:
             return [1.0 / len(sizes)] * len(sizes)
@@ -990,17 +1218,40 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _sizes_from_ratios(ratios: list[float], total: int) -> list[int]:
+        """Convert fractional ratios to absolute pixel sizes for a given total width/height.
+
+        Rounding remainder is assigned to the first pane so that sizes always
+        sum exactly to *total*.
+
+        Args:
+            ratios: List of proportional floats (should sum to 1.0).
+            total: Available pixel width or height to distribute.
+
+        Returns:
+            List of integer pixel sizes for use with :meth:`QSplitter.setSizes`.
+        """
         raw = [int(r * total) for r in ratios]
         # Distribute rounding remainder to the first pane
         raw[0] += total - sum(raw)
         return raw
 
     def _save_ratios(self, splitter, attr: str):
+        """Snapshot the current splitter proportions into an instance attribute.
+
+        Args:
+            splitter: :class:`QSplitter` whose current sizes should be captured.
+            attr: Name of the instance attribute (e.g. ``"_h_ratios"``) to update.
+        """
         sizes = splitter.sizes()
         if sum(sizes) > 0:
             setattr(self, attr, self._ratios_from_sizes(sizes))
 
     def _apply_ratios(self):
+        """Recompute and apply absolute splitter sizes from the stored ratios.
+
+        Called from :meth:`showEvent` and :meth:`resizeEvent` to maintain
+        proportional pane sizes across window resize events.
+        """
         w = self._h_splitter.width()
         h = self._v_splitter.height()
         rxtx_h = self._rx_tx_win.splitter.height()
@@ -1013,14 +1264,36 @@ class MainWindow(QMainWindow):
                 self._sizes_from_ratios(self._rxtx_ratios, rxtx_h))
 
     def showEvent(self, event):
+        """Apply stored splitter ratios on first show.
+
+        Args:
+            event: Qt show event passed to the parent class.
+        """
         super().showEvent(event)
         self._apply_ratios()
 
     def resizeEvent(self, event):
+        """Reapply splitter ratios after any window resize.
+
+        Deferred via a zero-millisecond timer so the new geometry is fully
+        committed before sizes are recalculated.
+
+        Args:
+            event: Qt resize event passed to the parent class.
+        """
         super().resizeEvent(event)
         QTimer.singleShot(0, self._apply_ratios)
 
     def closeEvent(self, event):
+        """Stop all background workers and disconnect CAN buses before closing.
+
+        Ensures the trace player, transmitter, UDS service, all CAN
+        connections, and the trace DiskWriter are cleanly shut down before
+        the window is destroyed.
+
+        Args:
+            event: Qt close event passed to the parent class.
+        """
         if self._trace_player is not None:
             self._trace_player.stop()
         if self._transmitter is not None:

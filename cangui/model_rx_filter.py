@@ -1,3 +1,13 @@
+"""RX filter model for gating incoming CAN messages by CAN-ID range and bus.
+
+Rules are evaluated top-to-bottom in a first-match fashion. Each rule specifies
+a CAN-ID range (id_from..id_to), an optional bus number, and an action (Pass or
+Drop). If no rule matches a message, the message is passed through by default.
+
+The model is persisted as a list of plain dicts via to_dicts()/from_dicts() for
+inclusion in project files.
+"""
+
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -5,12 +15,25 @@ from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, Signal
 
 
 class FilterAction(Enum):
+    """Action to apply when a filter rule matches an incoming CAN message."""
+
     PASS = "Pass"
     DROP = "Drop"
 
 
 @dataclass
 class RxFilterRule:
+    """A single filter rule that matches CAN messages by ID range and bus.
+
+    Attributes:
+        enabled: Whether this rule is active during evaluation.
+        action: The action to take when a message matches (Pass or Drop).
+        id_from: Inclusive lower bound of the CAN arbitration-ID range.
+        id_to: Inclusive upper bound of the CAN arbitration-ID range.
+        bus: Bus number to restrict this rule to. 0 means any bus.
+        name: Human-readable label shown in the filter table.
+    """
+
     enabled: bool = True
     action: FilterAction = FilterAction.PASS
     id_from: int = 0x000
@@ -19,6 +42,16 @@ class RxFilterRule:
     name: str = ""
 
     def matches(self, arb_id: int, bus: int) -> bool:
+        """Return True if the given arbitration ID and bus fall within this rule.
+
+        Args:
+            arb_id: The CAN arbitration ID of the incoming message.
+            bus: The bus number on which the message was received.
+
+        Returns:
+            True when the message falls within id_from..id_to and the bus
+            constraint is satisfied (rule.bus == 0 or rule.bus == bus).
+        """
         if self.bus != 0 and self.bus != bus:
             return False
         return self.id_from <= arb_id <= self.id_to
@@ -33,11 +66,24 @@ class RxFilterModel(QAbstractTableModel):
     Rules are evaluated top-to-bottom. The first enabled rule whose
     CAN-ID range and bus match determines whether the message is
     passed or dropped.  If no rule matches the message is passed.
+
+    The model is initialised with two default rules that pass all
+    standard-frame (0x000–0x7FF) and extended-frame (0x800–0x1FFFFFFF)
+    messages respectively.
+
+    Signals:
+        filters_changed: Emitted after any structural or value change to the
+            rule list so that consumers can reapply the filter.
     """
 
     filters_changed = Signal()
 
     def __init__(self, parent=None):
+        """Initialise the model with two default pass-all rules.
+
+        Args:
+            parent: Optional Qt parent object.
+        """
         super().__init__(parent)
         self._rules: list[RxFilterRule] = [
             RxFilterRule(name="Standard", action=FilterAction.PASS,
@@ -48,20 +94,64 @@ class RxFilterModel(QAbstractTableModel):
 
     # -- Qt model interface --
 
-    def rowCount(self, parent=QModelIndex()):
+    def rowCount(self, parent=QModelIndex()) -> int:
+        """Return the number of filter rules.
+
+        Args:
+            parent: Must be an invalid index for a flat table model.
+
+        Returns:
+            Number of rules, or 0 when parent is valid (no child rows).
+        """
         if parent.isValid():
             return 0
         return len(self._rules)
 
-    def columnCount(self, parent=QModelIndex()):
+    def columnCount(self, parent=QModelIndex()) -> int:
+        """Return the number of columns in the filter table.
+
+        Args:
+            parent: Unused for a flat table model.
+
+        Returns:
+            The fixed number of columns defined by COLUMNS.
+        """
         return len(COLUMNS)
 
-    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+    def headerData(self, section: int, orientation, role=Qt.ItemDataRole.DisplayRole):
+        """Return column header labels for horizontal orientation.
+
+        Args:
+            section: Column index.
+            orientation: Qt.Orientation; only Horizontal is handled.
+            role: ItemDataRole; only DisplayRole returns a value.
+
+        Returns:
+            The column header string, or None for unsupported roles/orientations.
+        """
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
             return COLUMNS[section]
         return None
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
+        """Return display, edit, or check-state data for a cell.
+
+        Column mapping:
+            0: CheckStateRole — enabled flag.
+            1: action (Pass/Drop).
+            2: rule name.
+            3: id_from — displayed as ``0x…``, edited as bare hex.
+            4: id_to   — displayed as ``0x…``, edited as bare hex.
+            5: bus number — displayed as "Any" when 0, edited as integer.
+
+        Args:
+            index: The model index identifying the cell.
+            role: The data role being queried.
+
+        Returns:
+            The requested cell value, or None for unsupported roles or invalid
+            indices.
+        """
         if not index.isValid():
             return None
         rule = self._rules[index.row()]
@@ -92,6 +182,14 @@ class RxFilterModel(QAbstractTableModel):
         return None
 
     def flags(self, index: QModelIndex):
+        """Return item flags, making column 0 checkable and columns 1–5 editable.
+
+        Args:
+            index: The model index whose flags are requested.
+
+        Returns:
+            Combined Qt.ItemFlag value for the cell.
+        """
         flags = super().flags(index)
         col = index.column()
         if col == 0:
@@ -100,7 +198,26 @@ class RxFilterModel(QAbstractTableModel):
             flags |= Qt.ItemFlag.ItemIsEditable
         return flags
 
-    def setData(self, index: QModelIndex, value, role=Qt.ItemDataRole.EditRole):
+    def setData(self, index: QModelIndex, value, role=Qt.ItemDataRole.EditRole) -> bool:
+        """Update a rule field from a delegate or check-state change.
+
+        For CheckStateRole on column 0 the rule's ``enabled`` flag is toggled.
+        For EditRole, column values are parsed and validated according to their
+        type (hex string for IDs, integer for bus, enum string for action).
+
+        Args:
+            index: The model index of the cell being edited.
+            value: The new value to apply.
+            role: The data role; CheckStateRole or EditRole are handled.
+
+        Returns:
+            True on success, False when the index is invalid, the role is
+            unsupported, or the value fails validation.
+
+        Emits:
+            dataChanged: For the modified cell after a successful update.
+            filters_changed: After any successful update.
+        """
         if not index.isValid():
             return False
         rule = self._rules[index.row()]
@@ -149,6 +266,14 @@ class RxFilterModel(QAbstractTableModel):
     # -- Public API --
 
     def add_rule(self, action: FilterAction = FilterAction.PASS):
+        """Append a new default rule to the end of the list.
+
+        Args:
+            action: The FilterAction (Pass or Drop) for the new rule.
+
+        Emits:
+            filters_changed: After the rule has been inserted.
+        """
         row = len(self._rules)
         self.beginInsertRows(QModelIndex(), row, row)
         self._rules.append(RxFilterRule(action=action))
@@ -156,6 +281,16 @@ class RxFilterModel(QAbstractTableModel):
         self.filters_changed.emit()
 
     def remove_rule(self, row: int):
+        """Remove the rule at the given row index.
+
+        Does nothing if ``row`` is out of bounds.
+
+        Args:
+            row: Zero-based index of the rule to remove.
+
+        Emits:
+            filters_changed: After the rule has been removed.
+        """
         if 0 <= row < len(self._rules):
             self.beginRemoveRows(QModelIndex(), row, row)
             self._rules.pop(row)
@@ -163,6 +298,16 @@ class RxFilterModel(QAbstractTableModel):
             self.filters_changed.emit()
 
     def move_up(self, row: int):
+        """Swap the rule at ``row`` with the one above it.
+
+        Does nothing if ``row`` is 0 or out of bounds.
+
+        Args:
+            row: Zero-based index of the rule to move up.
+
+        Emits:
+            filters_changed: After the move.
+        """
         if row > 0:
             self.beginMoveRows(QModelIndex(), row, row, QModelIndex(), row - 1)
             self._rules[row - 1], self._rules[row] = self._rules[row], self._rules[row - 1]
@@ -170,6 +315,16 @@ class RxFilterModel(QAbstractTableModel):
             self.filters_changed.emit()
 
     def move_down(self, row: int):
+        """Swap the rule at ``row`` with the one below it.
+
+        Does nothing if ``row`` is already at the last position.
+
+        Args:
+            row: Zero-based index of the rule to move down.
+
+        Emits:
+            filters_changed: After the move.
+        """
         if row < len(self._rules) - 1:
             # Qt requires destination > source+1 for downward move
             self.beginMoveRows(QModelIndex(), row, row, QModelIndex(), row + 2)
@@ -179,10 +334,24 @@ class RxFilterModel(QAbstractTableModel):
 
     @property
     def rules(self) -> list[RxFilterRule]:
+        """Read-only view of the current rule list in evaluation order."""
         return self._rules
 
     def accepts(self, arb_id: int, bus: int) -> bool:
-        """Return True if the message should be passed through."""
+        """Return True if a message with the given ID and bus should be passed.
+
+        Iterates through enabled rules in order. The first rule whose ID range
+        and bus constraint match determines the outcome. If no rule matches,
+        the message is passed by default.
+
+        Args:
+            arb_id: The CAN arbitration ID of the message to test.
+            bus: The bus number on which the message was received.
+
+        Returns:
+            True if the message should be forwarded to consumers; False if it
+            should be silently discarded.
+        """
         for rule in self._rules:
             if not rule.enabled:
                 continue
@@ -192,6 +361,12 @@ class RxFilterModel(QAbstractTableModel):
         return True
 
     def to_dicts(self) -> list[dict]:
+        """Serialise all rules to a list of plain dicts for project persistence.
+
+        Returns:
+            A list of dicts, each with keys: enabled, action, id_from, id_to,
+            bus, name.
+        """
         return [
             {
                 "enabled": r.enabled,
@@ -205,6 +380,17 @@ class RxFilterModel(QAbstractTableModel):
         ]
 
     def from_dicts(self, data: list[dict]):
+        """Replace all rules by deserialising a list of plain dicts.
+
+        If ``data`` is empty or results in an empty rule list, two default
+        pass-all rules (Standard and Extended) are inserted automatically.
+
+        Args:
+            data: A list of dicts as produced by to_dicts().
+
+        Emits:
+            filters_changed: After the model has been fully rebuilt.
+        """
         self.beginResetModel()
         self._rules.clear()
         for d in data:

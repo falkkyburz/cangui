@@ -1,3 +1,17 @@
+"""Qt table model for the CAN trace view with background disk-writing support.
+
+Captured CanMessage objects pass through a two-stage pipeline:
+
+1. A 50 ms batch timer (_batch_timer) drains _pending into TraceEntry objects
+   and hands them to _staged.  All disk I/O is delegated non-blocking to
+   _DiskWriterThread via a SimpleQueue.
+2. A 200 ms view timer (_view_timer) commits _staged to _entries and emits the
+   Qt data-change notifications that update the on-screen table.
+
+The deque has a hard cap of DISPLAY_BUFFER_SIZE rows; older entries are dropped
+automatically once the buffer is full.
+"""
+
 import queue as _stdlib_queue
 import threading
 import time
@@ -14,6 +28,20 @@ from cangui.trace_writer import TraceWriter, TraceFormat, create_trace_writer
 
 @dataclass
 class TraceEntry:
+    """Immutable snapshot of a single CAN frame as displayed in the trace table.
+
+    Attributes:
+        number: Sequential frame counter starting at 1 for each recording session.
+        timestamp: Relative timestamp in seconds from the first frame in the session.
+        bus: Bus channel number the frame was captured on.
+        can_id: CAN arbitration ID.
+        is_extended_id: True when the frame uses a 29-bit extended ID.
+        direction: Receive/transmit direction string, e.g. ``"Rx"`` or ``"Tx"``.
+        frame_type: Frame type string, e.g. ``"Data"`` or ``"Remote"``.
+        dlc: Data Length Code as reported by the hardware.
+        data: Raw payload bytes.
+    """
+
     number: int
     timestamp: float
     bus: int
@@ -41,18 +69,38 @@ class _DiskWriterThread(QThread):
     file_changed = Signal(str)  # emitted from this thread; Qt queues delivery to main thread
 
     def __init__(self, parent=None):
+        """Initialise the thread and create the internal command queue.
+
+        Args:
+            parent: Optional Qt parent object.
+        """
         super().__init__(parent)
         self._q: _stdlib_queue.SimpleQueue = _stdlib_queue.SimpleQueue()
 
     # -- Commands called from the main thread (non-blocking) --
 
     def cmd_start(self, folder: Path, fmt: TraceFormat, base_name: str):
+        """Open a new trace file and begin writing.
+
+        Args:
+            folder: Directory in which the trace file will be created.
+            fmt: Trace file format (e.g. TRC or BLF).
+            base_name: Base file name without extension; a timestamp is
+                recommended so recordings do not overwrite each other.
+        """
         self._q.put(("start", folder, fmt, base_name))
 
     def cmd_write(self, msg: CanMessage, direction: str):
+        """Enqueue a single CAN frame for writing to the current trace file.
+
+        Args:
+            msg: The CAN message to write.
+            direction: Direction string, e.g. ``"Rx"`` or ``"Tx"``.
+        """
         self._q.put(("write", msg, direction))
 
     def cmd_stop(self):
+        """Close the current trace file without stopping the thread."""
         self._q.put(("stop",))
 
     def cmd_sync(self):
@@ -62,12 +110,23 @@ class _DiskWriterThread(QThread):
         event.wait(timeout=10.0)
 
     def cmd_quit(self):
+        """Flush pending writes, close the file, and stop the thread.
+
+        Blocks the calling thread for up to 5 seconds waiting for the worker
+        thread to exit cleanly.
+        """
         self._q.put(("quit",))
         self.wait(5000)
 
     # -- Thread body --
 
     def run(self):
+        """Execute the disk-writer event loop; runs on the background thread.
+
+        Processes command tuples from the queue in order.  Supported operations
+        are ``start``, ``write``, ``stop``, ``sync``, and ``quit``.  The loop
+        exits when a ``quit`` command is received.
+        """
         writer: TraceWriter | None = None
         file_index = 0
         base_name = ""
@@ -119,11 +178,34 @@ class _DiskWriterThread(QThread):
 
 
 class TraceModel(QAbstractTableModel):
+    """Qt table model that captures every CAN frame and renders it as a table row.
+
+    Received messages are collected in a _pending list on the main thread.
+    A 50 ms _batch_timer converts _pending entries into TraceEntry objects
+    (draining into _staged) and hands disk writes to _DiskWriterThread.
+    A 200 ms _view_timer commits _staged into the _entries deque, issuing
+    the appropriate Qt model-change signals so the view refreshes smoothly
+    without flooding the event loop.
+
+    Signals:
+        file_changed (str): Emitted when the active trace file path changes.
+            An empty string means recording has stopped.
+        entries_committed: Emitted each time staged entries are committed to
+            the display deque.
+        rate_updated (int): Emitted approximately every second with the current
+            receive rate in messages per second.
+    """
+
     file_changed = Signal(str)      # current trace file path (or "" when closed)
     entries_committed = Signal()    # emitted after staged entries are committed to display
     rate_updated = Signal(int)      # messages per second
 
     def __init__(self, parent=None):
+        """Initialise the model, start the disk-writer thread and both timers.
+
+        Args:
+            parent: Optional Qt parent object.
+        """
         super().__init__(parent)
         self._entries: deque[TraceEntry] = deque(maxlen=DISPLAY_BUFFER_SIZE)
         # Staging list: TraceEntry objects waiting to be committed to the display model.
@@ -161,17 +243,33 @@ class TraceModel(QAbstractTableModel):
         self._rate_window_start = time.monotonic()
 
     def _on_disk_file_changed(self, path: str):
+        """Relay the disk-writer thread's file_changed signal to model consumers.
+
+        Args:
+            path: New active trace file path, or ``""`` when the file is closed.
+        """
         self._current_file = path
         self.file_changed.emit(path)
 
     @property
     def recording(self) -> bool:
+        """True while the model is actively capturing incoming messages."""
         return self._recording
 
     def set_trace_folder(self, folder: Path | None):
+        """Set the directory where new trace files will be written.
+
+        Args:
+            folder: Target directory, or ``None`` to disable file recording.
+        """
         self._trace_folder = folder
 
     def set_trace_format(self, fmt: str):
+        """Set the trace file format by name, falling back to TRC on unknown values.
+
+        Args:
+            fmt: Format identifier string, e.g. ``"trc"`` or ``"blf"``.
+        """
         try:
             self._trace_format = TraceFormat(fmt)
         except ValueError:
@@ -179,6 +277,7 @@ class TraceModel(QAbstractTableModel):
 
     @property
     def current_file(self) -> str:
+        """Absolute path of the currently open trace file, or ``""`` if none."""
         return self._current_file
 
     def flush_all(self):
@@ -192,22 +291,27 @@ class TraceModel(QAbstractTableModel):
 
     @property
     def message_count(self) -> int:
+        """Total number of frames captured since the last clear(), including staged ones."""
         return self._msg_number
 
     @property
     def entries(self) -> deque[TraceEntry]:
+        """Live deque of committed TraceEntry objects currently visible in the table."""
         return self._entries
 
     def start(self):
+        """Begin capturing messages and, if a trace folder is configured, open a new file."""
         self._recording = True
         if self._trace_folder is not None:
             base_name = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
             self._disk_thread.cmd_start(self._trace_folder, self._trace_format, base_name)
 
     def pause(self):
+        """Suspend capture without closing the trace file."""
         self._recording = False
 
     def stop(self):
+        """Stop capturing, flush pending data, and close the trace file."""
         self._recording = False
         self._flush()           # drain _pending → disk queue + _staged
         self._disk_thread.cmd_stop()  # queued after all write commands
@@ -220,6 +324,7 @@ class TraceModel(QAbstractTableModel):
         self._disk_thread.cmd_quit()
 
     def clear(self):
+        """Discard all entries, reset the frame counter, and notify the view."""
         self.beginResetModel()
         self._entries.clear()
         self._staged.clear()
@@ -230,12 +335,23 @@ class TraceModel(QAbstractTableModel):
         self.endResetModel()
 
     def on_message(self, msg: CanMessage, direction: str = "Rx"):
+        """Enqueue a single CAN message for capture; ignored if not recording.
+
+        Args:
+            msg: The incoming CAN message.
+            direction: Direction label, defaults to ``"Rx"``.
+        """
         if not self._recording:
             return
         self._pending.append(msg)
         self._pending_directions.append(direction)
 
     def on_messages(self, messages: list[CanMessage]):
+        """Enqueue a batch of received CAN messages; ignored if not recording.
+
+        Args:
+            messages: List of CAN messages, all tagged as ``"Rx"``.
+        """
         if not self._recording:
             return
         self._pending.extend(messages)
@@ -311,19 +427,50 @@ class TraceModel(QAbstractTableModel):
     # -- QAbstractTableModel interface --
 
     def rowCount(self, parent=QModelIndex()):
+        """Return the number of committed trace rows.
+
+        Args:
+            parent: Must be invalid for a flat table; returns 0 otherwise.
+        Returns:
+            Number of rows in the display deque.
+        """
         if parent.isValid():
             return 0
         return len(self._entries)
 
     def columnCount(self, parent=QModelIndex()):
+        """Return the fixed number of trace columns.
+
+        Args:
+            parent: Unused for a flat table.
+        Returns:
+            Number of columns defined in COLUMNS.
+        """
         return len(COLUMNS)
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        """Return the column header label.
+
+        Args:
+            section: Column index.
+            orientation: Only horizontal orientation returns a value.
+            role: Only DisplayRole returns a value.
+        Returns:
+            Column name string, or None for unsupported combinations.
+        """
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
             return COLUMNS[section]
         return None
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
+        """Return display data for a trace cell.
+
+        Args:
+            index: Cell address within the model.
+            role: Only DisplayRole returns a non-None value.
+        Returns:
+            Formatted cell value as a string or int, or None for invalid cells.
+        """
         if not index.isValid() or role != Qt.ItemDataRole.DisplayRole:
             return None
         row = index.row()
@@ -343,4 +490,11 @@ class TraceModel(QAbstractTableModel):
         return None
 
     def flags(self, index: QModelIndex):
+        """Return item flags; trace rows are selectable but not editable.
+
+        Args:
+            index: Cell address within the model.
+        Returns:
+            ItemIsEnabled | ItemIsSelectable flags.
+        """
         return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable

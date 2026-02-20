@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, Signal, QTimer
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QToolBar, QTableView, QHeaderView, QComboBox, QLabel,
+    QWidget, QToolBar, QTableView, QHeaderView, QComboBox, QLabel,
 )
 from PySide6.QtGui import QAction, QColor
 
@@ -8,6 +8,7 @@ from cangui.dtc_manager import Dtc, DtcManager
 from cangui.uds_client import UdsResponse
 from cangui.service_uds import UdsService
 from cangui.icons import icon as _icon
+from cangui.ui_base_dock_window import BaseDockWindow
 
 
 DTC_COLUMNS = ["DTC Code", "Display", "Status", "Status Bits", "Details"]
@@ -21,24 +22,36 @@ DTC_SUBFUNCTIONS = {
 
 
 class DtcModel(QAbstractTableModel):
+    """Table model backing the DTC list in :class:`DtcWindow`.
+
+    Columns: DTC Code (hex), Display (P/C/B/U format), Status (text flags),
+    Status Bits (binary), Details (raw hex summary).  Active DTCs are coloured
+    red; confirmed-but-not-active DTCs are coloured orange.
+    """
+
     def __init__(self, parent=None):
+        """Initialise with an empty DTC list."""
         super().__init__(parent)
         self._dtcs: list[Dtc] = []
 
     def rowCount(self, parent=QModelIndex()):
+        """Return the number of DTC records, or 0 for non-root parents."""
         if parent.isValid():
             return 0
         return len(self._dtcs)
 
     def columnCount(self, parent=QModelIndex()):
+        """Return the fixed number of DTC table columns."""
         return len(DTC_COLUMNS)
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        """Return column header text for the horizontal header."""
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
             return DTC_COLUMNS[section]
         return None
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
+        """Return display text or foreground colour for each DTC cell."""
         if not index.isValid():
             return None
         dtc = self._dtcs[index.row()]
@@ -61,38 +74,50 @@ class DtcModel(QAbstractTableModel):
         return None
 
     def flags(self, index: QModelIndex):
+        """Return read-only item flags (enabled and selectable, not editable)."""
         return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
 
     def set_dtcs(self, dtcs: list[Dtc]):
+        """Replace the entire DTC list and reset the model.
+
+        Args:
+            dtcs: Parsed DTC records from a UDS 0x19 response.
+        """
         self.beginResetModel()
         self._dtcs = dtcs
         self.endResetModel()
 
     def clear(self):
+        """Remove all DTC records and reset the model."""
         self.beginResetModel()
         self._dtcs.clear()
         self.endResetModel()
 
     @property
     def dtcs(self) -> list[Dtc]:
+        """Read-only view of the current DTC record list."""
         return self._dtcs
 
 
-class DtcWindow(QWidget):
+class DtcWindow(BaseDockWindow):
     """DTC (Diagnostic Trouble Code) display and management window."""
 
     TITLE = "DTC"
 
     def __init__(self, uds_service: UdsService, parent=None):
+        """Build the DTC panel with its sub-function combo, toolbar, and table.
+
+        Args:
+            uds_service: The active :class:`~cangui.service_uds.UdsService`
+                used to issue ReadDTCInformation and ClearDiagnosticInformation requests.
+            parent: Optional Qt parent widget.
+        """
         super().__init__(parent)
         self._uds = uds_service
         self._dtc_manager = DtcManager()
         self._model = DtcModel(self)
         self._pending_read = False
         self._pending_clear = False
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
 
         # Toolbar
         toolbar = QToolBar()
@@ -120,7 +145,7 @@ class DtcWindow(QWidget):
         clear_list_action.triggered.connect(self._model.clear)
         toolbar.addAction(clear_list_action)
 
-        layout.addWidget(toolbar)
+        self._layout.addWidget(toolbar)
 
         # Table
         self._table = QTableView()
@@ -132,7 +157,7 @@ class DtcWindow(QWidget):
         self._table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Interactive
         )
-        layout.addWidget(self._table)
+        self._layout.addWidget(self._table)
 
         self._model.rowsInserted.connect(lambda *_: self._resize_columns())
         self._model.modelReset.connect(lambda *_: self._resize_columns())
@@ -140,20 +165,23 @@ class DtcWindow(QWidget):
 
         # Status
         self._status_label = QLabel("")
-        layout.addWidget(self._status_label)
+        self._layout.addWidget(self._status_label)
 
         # Wire UDS responses
         self._uds.response_received.connect(self._on_response)
 
     def _resize_columns(self):
+        """Resize all columns except the last to fit their contents."""
         for i in range(self._model.columnCount() - 1):
             self._table.resizeColumnToContents(i)
 
     @property
     def primary_view(self):
+        """The DTC table view that receives keyboard focus."""
         return self._table
 
     def _on_read(self):
+        """Send a ReadDTCInformation (0x19) request using the selected sub-function."""
         name = self._subfunction_combo.currentText()
         subfunc = DTC_SUBFUNCTIONS.get(name, 0x02)
         # ReadDTCInformation: 0x19 <sub-function> <status-mask>
@@ -163,6 +191,7 @@ class DtcWindow(QWidget):
         self._uds.raw_request(data)
 
     def _on_clear(self):
+        """Send a ClearDiagnosticInformation (0x14) request to erase all DTCs."""
         # ClearDiagnosticInformation: 0x14 FF FF FF (all DTCs)
         data = bytes([0x14, 0xFF, 0xFF, 0xFF])
         self._pending_clear = True
@@ -170,6 +199,7 @@ class DtcWindow(QWidget):
         self._uds.raw_request(data)
 
     def _on_response(self, resp: UdsResponse):
+        """Handle a UDS response, updating the table or status label as appropriate."""
         if resp.service_name != "RawRequest":
             return
 

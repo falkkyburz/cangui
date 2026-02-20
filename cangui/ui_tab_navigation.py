@@ -21,6 +21,18 @@ class _BranchIndicatorMixin:
 
     def drawBranches(self, painter: QPainter, rect: QRect,
                      index: QModelIndex) -> None:
+        """Paint a custom [+]/[−] expand indicator in the branch gutter.
+
+        Fills the gutter with the selection highlight when the row is selected,
+        then draws a bordered rectangle with a horizontal (and vertical for
+        collapsed) line in a colour that stays visible on both focus and
+        no-focus selection backgrounds.
+
+        Args:
+            painter: The active QPainter for the viewport.
+            rect: Bounding rectangle of the branch gutter cell.
+            index: Model index of the row being painted.
+        """
         sel = self.selectionModel()
         selected = sel is not None and sel.isSelected(index)
 
@@ -72,6 +84,15 @@ class _TabEditMixin:
     columns left-to-right, wrapping to the next row when exhausted."""
 
     def moveCursor(self, action, modifiers):
+        """Override Tab/Shift+Tab to move between editable columns instead of rows.
+
+        Args:
+            action: The cursor action requested by Qt.
+            modifiers: Keyboard modifiers (unused for Tab navigation).
+
+        Returns:
+            The target :class:`QModelIndex`, or the current index unchanged.
+        """
         if action == QAbstractItemView.CursorAction.MoveNext:
             return self._next_editable(self.currentIndex(), forward=True)
         if action == QAbstractItemView.CursorAction.MovePrevious:
@@ -79,6 +100,15 @@ class _TabEditMixin:
         return super().moveCursor(action, modifiers)
 
     def _next_editable(self, current: QModelIndex, forward: bool) -> QModelIndex:
+        """Find the next editable column index, wrapping to the adjacent row.
+
+        Args:
+            current: The currently selected model index.
+            forward: ``True`` to advance (Tab), ``False`` to retreat (Shift+Tab).
+
+        Returns:
+            The nearest editable index, or *current* if none is found.
+        """
         if not current.isValid():
             return current
         model = self.model()
@@ -109,12 +139,12 @@ class _TabEditMixin:
 
 
 class TabTreeView(_BranchIndicatorMixin, _TabEditMixin, QTreeView):
-    pass
+    """QTreeView with custom branch indicators and Tab-key column navigation."""
 
 
 class TabTableView(_TabEditMixin, QTableView):
-    pass
+    """QTableView with Tab-key column navigation between editable cells."""
 
 
 class TabParameterTree(_BranchIndicatorMixin, _TabEditMixin, ParameterTree):
-    pass
+    """ParameterTree with custom branch indicators and Tab-key column navigation."""

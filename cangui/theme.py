@@ -1,3 +1,7 @@
+# Inline stylesheet for secondary/muted text labels (e.g., active file labels in toolbars).
+# Uses the same muted grey as scrollbar handles to stay consistent with the palette.
+SECONDARY_TEXT_STYLE = "color: #9A9B9F; padding: 0 4px;"
+
 LIGHT_THEME = """
 /* ── Global Base ──────────────────────────────────────────── */
 QWidget {

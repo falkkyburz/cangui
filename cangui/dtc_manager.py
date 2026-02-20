@@ -1,3 +1,8 @@
+"""Diagnostic Trouble Code parsing utilities for cangui.
+
+Provides the :class:`Dtc` dataclass and :class:`DtcManager` which parse UDS
+ReadDTCInformation (service 0x19) response bytes into structured DTC records.
+"""
 from dataclasses import dataclass
 
 
@@ -14,11 +19,20 @@ DTC_STATUS_WARNING_INDICATOR = 0x80
 
 @dataclass
 class Dtc:
+    """A single Diagnostic Trouble Code record from a UDS 0x19 response.
+
+    Attributes:
+        code: 3-byte DTC code as an integer (e.g. ``0x012345``).
+        status: ISO 14229 status byte containing bit-flags for active,
+            confirmed, pending, etc.
+    """
+
     code: int  # 3-byte DTC code
     status: int  # Status byte
 
     @property
     def code_hex(self) -> str:
+        """Return the DTC code as a zero-padded 6-digit hex string (e.g. ``"012345"``)."""
         return f"{self.code:06X}"
 
     @property
@@ -34,18 +48,22 @@ class Dtc:
 
     @property
     def is_active(self) -> bool:
+        """``True`` when the *TestFailed* status bit (0x01) is set."""
         return bool(self.status & DTC_STATUS_TEST_FAILED)
 
     @property
     def is_confirmed(self) -> bool:
+        """``True`` when the *Confirmed* status bit (0x08) is set."""
         return bool(self.status & DTC_STATUS_CONFIRMED)
 
     @property
     def is_pending(self) -> bool:
+        """``True`` when the *PendingDTC* status bit (0x04) is set."""
         return bool(self.status & DTC_STATUS_PENDING)
 
     @property
     def status_text(self) -> str:
+        """Human-readable comma-separated list of active status flags, or ``"Inactive"``."""
         parts = []
         if self.status & DTC_STATUS_TEST_FAILED:
             parts.append("Active")
@@ -61,6 +79,7 @@ class Dtc:
 
     @property
     def status_bits(self) -> str:
+        """Return the status byte as an 8-character binary string (MSB first)."""
         return f"{self.status:08b}"
 
 

@@ -1,3 +1,9 @@
+"""RX Filter dock window for cangui.
+
+Allows the user to define pass/drop rules that gate incoming CAN frames
+before they reach the RX model and trace.  Backed by
+:class:`~cangui.model_rx_filter.RxFilterModel`.
+"""
 from PySide6.QtWidgets import (
     QHeaderView, QToolBar, QComboBox, QStyledItemDelegate,
 )
@@ -14,24 +20,41 @@ class ActionDelegate(QStyledItemDelegate):
     """Dropdown delegate for the Action column (Pass/Drop)."""
 
     def createEditor(self, parent, option, index):
+        """Return a QComboBox pre-populated with Pass/Drop choices."""
         combo = QComboBox(parent)
         combo.addItems([a.value for a in FilterAction])
         return combo
 
     def setEditorData(self, editor, index):
+        """Select the current action value in the combo-box editor."""
         value = index.data(Qt.ItemDataRole.EditRole)
         idx = editor.findText(value)
         if idx >= 0:
             editor.setCurrentIndex(idx)
 
     def setModelData(self, editor, model, index):
+        """Write the selected action string back to the model."""
         model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
 
 
 class RxFilterWindow(BaseDockWindow):
+    """RX filter rule editor panel.
+
+    Presents :class:`~cangui.model_rx_filter.RxFilterModel` in a table with
+    columns for CAN ID (hex), mask (hex), and action (Pass/Drop).  The user
+    can add pass or drop rules, remove rules, and reorder them — rules are
+    evaluated top-to-bottom by the dispatcher.
+    """
+
     TITLE = "Rx Filter"
 
     def __init__(self, model: RxFilterModel, parent=None):
+        """Build the filter panel with its toolbar and table.
+
+        Args:
+            model: The :class:`~cangui.model_rx_filter.RxFilterModel` to display.
+            parent: Optional Qt parent widget.
+        """
         super().__init__(parent)
         self._model = model
 
@@ -79,19 +102,23 @@ class RxFilterWindow(BaseDockWindow):
         QTimer.singleShot(0, self._resize_columns)
 
     def _resize_columns(self):
+        """Resize all columns except the last to fit their contents."""
         for i in range(self._model.columnCount() - 1):
             self._view.resizeColumnToContents(i)
 
     @property
     def primary_view(self):
+        """The table view that receives keyboard focus."""
         return self._view
 
     def _on_remove(self):
+        """Remove the currently selected filter rule from the model."""
         index = self._view.currentIndex()
         if index.isValid():
             self._model.remove_rule(index.row())
 
     def _on_move_up(self):
+        """Move the selected filter rule one row up and follow with the selection."""
         index = self._view.currentIndex()
         if index.isValid():
             self._model.move_up(index.row())
@@ -99,6 +126,7 @@ class RxFilterWindow(BaseDockWindow):
             self._view.setCurrentIndex(self._model.index(new_row, index.column()))
 
     def _on_move_down(self):
+        """Move the selected filter rule one row down and follow with the selection."""
         index = self._view.currentIndex()
         if index.isValid():
             self._model.move_down(index.row())

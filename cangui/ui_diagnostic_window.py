@@ -4,12 +4,14 @@ from PySide6.QtWidgets import (
     QComboBox, QLineEdit, QPushButton, QTextEdit,
     QGroupBox, QSpinBox, QLabel, QToolBar, QSplitter, QFileDialog,
 )
+# QVBoxLayout retained for sub-widget layouts inside this file
 from PySide6.QtGui import QAction
 
 from cangui.uds_client import UdsResponse
 from cangui.security_loader import SecurityLoader
 from cangui.service_uds import UdsService
 from cangui.icons import icon as _icon
+from cangui.ui_base_dock_window import BaseDockWindow
 
 
 # Common UDS sessions
@@ -33,7 +35,7 @@ SERVICE_TEMPLATES = {
 }
 
 
-class DiagnosticWindow(QWidget):
+class DiagnosticWindow(BaseDockWindow):
     """Diagnostic window for UDS communication."""
 
     TITLE = "Diagnostics"
@@ -42,12 +44,17 @@ class DiagnosticWindow(QWidget):
     disconnect_requested = Signal()
 
     def __init__(self, uds_service: UdsService, parent=None):
+        """Build the Diagnostics panel with connection settings, UDS controls, and a log.
+
+        Args:
+            uds_service: The :class:`~cangui.service_uds.UdsService` that
+                executes all UDS requests.
+            parent: Optional Qt parent widget.
+        """
         super().__init__(parent)
         self._uds = uds_service
         self._security_loader = SecurityLoader()
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
+        self._layout.setContentsMargins(4, 4, 4, 4)
 
         # Toolbar
         toolbar = QToolBar()
@@ -68,7 +75,7 @@ class DiagnosticWindow(QWidget):
         self._tester_present_action.triggered.connect(self._uds.tester_present)
         toolbar.addAction(self._tester_present_action)
 
-        layout.addWidget(toolbar)
+        self._layout.addWidget(toolbar)
 
         splitter = QSplitter()
         splitter.setOrientation(Qt.Orientation.Vertical)
@@ -216,7 +223,7 @@ class DiagnosticWindow(QWidget):
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 1)
 
-        layout.addWidget(splitter)
+        self._layout.addWidget(splitter)
 
         # Wire UDS service signals
         self._uds.response_received.connect(self._on_response)
@@ -225,27 +232,37 @@ class DiagnosticWindow(QWidget):
 
     @property
     def primary_view(self):
+        """The log text area that receives keyboard focus."""
         return self._log
 
     def _get_tx_id(self) -> int:
+        """Parse the TX-ID field as a hex integer, defaulting to 0x7E0 on error."""
         try:
             return int(self._tx_id_edit.text(), 16)
         except ValueError:
             return 0x7E0
 
     def _get_rx_id(self) -> int:
+        """Parse the RX-ID field as a hex integer, defaulting to 0x7E8 on error."""
         try:
             return int(self._rx_id_edit.text(), 16)
         except ValueError:
             return 0x7E8
 
     def _on_connect(self):
+        """Emit :attr:`connect_requested` with the configured TX ID, RX ID, and bus number."""
         self.connect_requested.emit(self._get_tx_id(), self._get_rx_id(), self._bus_spin.value())
 
     def _on_disconnect(self):
+        """Emit :attr:`disconnect_requested` to close the active UDS session."""
         self.disconnect_requested.emit()
 
     def _on_connection_changed(self, connected: bool):
+        """Update toolbar actions and log a status message when the UDS connection changes.
+
+        Args:
+            connected: ``True`` when a connection was just established.
+        """
         self._connect_action.setEnabled(not connected)
         self._disconnect_action.setEnabled(connected)
         if connected:
@@ -254,12 +271,14 @@ class DiagnosticWindow(QWidget):
             self._log_message("Disconnected", "UDS connection closed")
 
     def _on_change_session(self):
+        """Read the session combo and issue a DiagnosticSessionControl request."""
         name = self._session_combo.currentText()
         session = SESSIONS.get(name, 0x01)
         self._log_message("Request", f"DiagnosticSessionControl → session 0x{session:02X}")
         self._uds.change_session(session)
 
     def _on_read_did(self):
+        """Parse the DID field and issue a ReadDataByIdentifier (0x22) request."""
         try:
             did = int(self._read_did_edit.text(), 16)
         except ValueError:
@@ -269,6 +288,7 @@ class DiagnosticWindow(QWidget):
         self._uds.read_did(did)
 
     def _on_write_did(self):
+        """Parse the DID and data fields and issue a WriteDataByIdentifier (0x2E) request."""
         try:
             did = int(self._write_did_edit.text(), 16)
         except ValueError:
@@ -283,11 +303,17 @@ class DiagnosticWindow(QWidget):
         self._uds.write_did(did, data)
 
     def _on_template_changed(self, text: str):
+        """Fill the raw data field with the byte pattern for the selected service template.
+
+        Args:
+            text: Name of the selected template from the combo box.
+        """
         template = SERVICE_TEMPLATES.get(text)
         if template:
             self._raw_data_edit.setText(template)
 
     def _on_raw_request(self):
+        """Parse the raw hex field and issue it as an unframed UDS request."""
         try:
             data = bytes.fromhex(self._raw_data_edit.text().replace(" ", ""))
         except ValueError:
@@ -297,6 +323,7 @@ class DiagnosticWindow(QWidget):
         self._uds.raw_request(data)
 
     def _on_browse_security_file(self):
+        """Open a file dialog to select a seed-key plugin and load it."""
         path, _ = QFileDialog.getOpenFileName(
             self, "Select Seed-Key File", "",
             "Python Files (*.py);;All Files (*)"
@@ -311,6 +338,7 @@ class DiagnosticWindow(QWidget):
             self._log_message("Error", f"Failed to load security file: {e}")
 
     def _on_security_unlock(self):
+        """Issue a SecurityAccess (0x27) request using the configured level and key algorithm."""
         level = self._sec_level_spin.value()
         if not self._security_loader.is_loaded:
             self._log_message("Request", f"SecurityAccess → level 0x{level:02X} (seed only, no key file)")
@@ -320,6 +348,7 @@ class DiagnosticWindow(QWidget):
             self._uds.security_access(level, self._security_loader.calculate_key)
 
     def _on_response(self, resp: UdsResponse):
+        """Append a formatted response or error entry to the log text area."""
         if resp.success:
             msg = f"[+] {resp.service_name}"
             if resp.did:
@@ -340,9 +369,20 @@ class DiagnosticWindow(QWidget):
             self._log_message("Response", msg)
 
     def _on_error(self, error: str):
+        """Append a UDS error message to the log.
+
+        Args:
+            error: Human-readable error string from UdsWorker.
+        """
         self._log_message("Error", error)
 
     def _log_message(self, tag: str, message: str):
+        """Append a timestamped ``[tag] message`` line to the log area.
+
+        Args:
+            tag: Short category label (e.g. ``"Request"``, ``"Response"``, ``"Error"``).
+            message: The body text to log.
+        """
         from datetime import datetime
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         self._log.append(f"[{ts}] [{tag}] {message}")
