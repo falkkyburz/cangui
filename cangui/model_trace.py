@@ -228,13 +228,13 @@ class TraceModel(QAbstractTableModel):
 
         # Fast timer: convert pending messages to TraceEntry objects (data capture)
         self._batch_timer = QTimer(self)
-        self._batch_timer.setInterval(50)
+        self._batch_timer.setInterval(20)
         self._batch_timer.timeout.connect(self._flush)
         self._batch_timer.start()
 
-        # Slow timer: commit staged entries to the model (screen update)
+        # View timer: commit staged entries to the model (screen update)
         self._view_timer = QTimer(self)
-        self._view_timer.setInterval(200)
+        self._view_timer.setInterval(20)
         self._view_timer.timeout.connect(self._commit_staged)
         self._view_timer.start()
 

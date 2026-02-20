@@ -175,8 +175,12 @@ class SymbolDelegate(QStyledItemDelegate):
         combo.setEditable(True)
         combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         model = index.model()
-        if hasattr(model, "get_all_symbols"):
-            symbols = model.get_all_symbols()
+        # Unwrap any proxy layers to reach the source model
+        source_model = model
+        while hasattr(source_model, "sourceModel"):
+            source_model = source_model.sourceModel()
+        if hasattr(source_model, "get_all_symbols"):
+            symbols = source_model.get_all_symbols()
             combo.addItems(symbols)
         # Pre-select current value
         current = index.data(Qt.ItemDataRole.EditRole)

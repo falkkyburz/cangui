@@ -305,6 +305,7 @@ class WatchDidWindow(BaseDockWindow):
         self._table.setModel(self._model)
         self._table.setAlternatingRowColors(True)
         self._table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QTableView.SelectionMode.ExtendedSelection)
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.horizontalHeader().setSectionResizeMode(
@@ -344,10 +345,18 @@ class WatchDidWindow(BaseDockWindow):
         self._model.add_entry(did, name, cycle)
 
     def _on_remove(self):
-        """Remove the currently selected DID entry from the model."""
-        index = self._table.currentIndex()
-        if index.isValid():
-            self._model.remove_entry(index.row())
+        """Remove all selected DID entries from the model."""
+        rows = sorted(
+            {i.row() for i in self._table.selectionModel().selectedIndexes()
+             if i.column() == 0},
+            reverse=True,
+        )
+        if not rows:
+            idx = self._table.currentIndex()
+            if idx.isValid():
+                rows = [idx.row()]
+        for row in rows:
+            self._model.remove_entry(row)
 
     def _on_move_up(self):
         """Move the selected DID entry one row upward and keep it selected."""
@@ -401,12 +410,19 @@ class WatchDidWindow(BaseDockWindow):
         self._poll_timer.start(next_entry.cycle_ms)
 
     def _on_add_to_plot(self):
-        """Emit add_to_plot_requested for the currently selected DID entry."""
-        index = self._table.currentIndex()
-        if not index.isValid():
-            return
-        entry = self._model.entries[index.row()]
-        self.add_to_plot_requested.emit(entry.did, entry.name, "")
+        """Emit add_to_plot_requested for every selected DID entry."""
+        rows = sorted(
+            {i.row() for i in self._table.selectionModel().selectedIndexes()
+             if i.column() == 0}
+        )
+        if not rows:
+            idx = self._table.currentIndex()
+            if idx.isValid():
+                rows = [idx.row()]
+        for row in rows:
+            if row < len(self._model.entries):
+                entry = self._model.entries[row]
+                self.add_to_plot_requested.emit(entry.did, entry.name, "")
 
     def _on_response(self, resp: UdsResponse):
         """Handle an incoming UDS response and update the matching DID row.

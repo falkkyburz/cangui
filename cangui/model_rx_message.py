@@ -172,7 +172,7 @@ class RxMessageModel(QAbstractItemModel):
         self._rows_needing_decode: set[int] = set()
 
         self._batch_timer = QTimer(self)
-        self._batch_timer.setInterval(50)
+        self._batch_timer.setInterval(20)
         self._batch_timer.timeout.connect(self._flush)
         self._batch_timer.start()
 

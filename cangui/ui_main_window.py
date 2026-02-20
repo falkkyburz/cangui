@@ -514,26 +514,29 @@ class MainWindow(QMainWindow):
         Raises:
             RuntimeError: If no bus is currently connected.
         """
+        # Resolve the target bus first so the script hook is never called
+        # when no connection is active (e.g. during cyclic transmission while
+        # the bus is disconnected).
+        target = None
+        for conn in self._can_service.connections:
+            if conn.bus.is_connected and conn.config.bus_number == msg.bus:
+                target = conn
+                break
+        if target is None:
+            for conn in self._can_service.connections:
+                if conn.bus.is_connected:
+                    target = conn
+                    break
+        if target is None:
+            raise RuntimeError("No connected bus")
+
         if self._script_plugin.is_loaded:
             data = self._script_plugin.apply_tx(msg.arbitration_id, msg.data)
             if data != msg.data:
                 msg.data = data
                 if msg.row >= 0:
                     self._tx_display_update.emit(msg.row, data)
-        sent = False
-        for conn in self._can_service.connections:
-            if conn.bus.is_connected and conn.config.bus_number == msg.bus:
-                conn.bus.send(msg)
-                sent = True
-                break
-        if not sent:
-            for conn in self._can_service.connections:
-                if conn.bus.is_connected:
-                    conn.bus.send(msg)
-                    sent = True
-                    break
-        if not sent:
-            raise RuntimeError("No connected bus")
+        target.bus.send(msg)
         # Record TX frame in the trace (only when recording is active)
         self._trace_model.on_message(msg, "Tx")
 
@@ -573,7 +576,6 @@ class MainWindow(QMainWindow):
             raw_data=bytearray(dlc),
             cycle_time_ms=cycle_ms if cycle_ms > 0 else 100,
         ))
-        self._main_tabs.setCurrentWidget(self._rx_tx_win)
 
     # -- DBC / Database management --
 

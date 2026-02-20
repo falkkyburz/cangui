@@ -68,7 +68,7 @@ class WatchModel(QAbstractTableModel):
         self._pending: list[CanMessage] = []
 
         self._batch_timer = QTimer(self)
-        self._batch_timer.setInterval(100)
+        self._batch_timer.setInterval(20)
         self._batch_timer.timeout.connect(self._flush)
         self._batch_timer.start()
 

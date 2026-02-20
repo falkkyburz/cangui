@@ -89,6 +89,7 @@ class RxFilterWindow(BaseDockWindow):
         self._view.setModel(self._model)
         self._view.setAlternatingRowColors(True)
         self._view.setSelectionBehavior(TabTableView.SelectionBehavior.SelectRows)
+        self._view.setSelectionMode(TabTableView.SelectionMode.ExtendedSelection)
         self._view.verticalHeader().setVisible(False)
         self._view.horizontalHeader().setStretchLastSection(True)
         self._view.horizontalHeader().setSectionResizeMode(
@@ -112,10 +113,18 @@ class RxFilterWindow(BaseDockWindow):
         return self._view
 
     def _on_remove(self):
-        """Remove the currently selected filter rule from the model."""
-        index = self._view.currentIndex()
-        if index.isValid():
-            self._model.remove_rule(index.row())
+        """Remove all selected filter rules from the model."""
+        rows = sorted(
+            {i.row() for i in self._view.selectionModel().selectedIndexes()
+             if i.column() == 0},
+            reverse=True,
+        )
+        if not rows:
+            idx = self._view.currentIndex()
+            if idx.isValid():
+                rows = [idx.row()]
+        for row in rows:
+            self._model.remove_rule(row)
 
     def _on_move_up(self):
         """Move the selected filter rule one row up and follow with the selection."""

@@ -186,6 +186,7 @@ class PlotListWindow(BaseDockWindow):
         self._table.setModel(self._model)
         self._table.setAlternatingRowColors(True)
         self._table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QTableView.SelectionMode.ExtendedSelection)
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
@@ -287,21 +288,29 @@ class PlotListWindow(BaseDockWindow):
     # -- Toolbar handlers --
 
     def _on_remove(self):
-        """Remove the currently selected signal row and emit ``signal_removed``.
+        """Remove all selected signal rows and emit ``signal_removed`` for each.
 
-        Does nothing if no row is selected or the selection is out of range.
+        Rows are collected, deduplicated, and removed in reverse order so
+        earlier indices remain valid throughout.
 
         Emits:
-            signal_removed: With ``(arb_id, signal_name)`` of the deleted entry.
+            signal_removed: With ``(arb_id, signal_name)`` for each deleted entry.
         """
-        index = self._table.currentIndex()
-        if not index.isValid():
-            return
-        row = index.row()
-        if row < len(self._model.entries):
-            entry = self._model.entries[row]
-            self._model.remove_entry(row)
-            self.signal_removed.emit(entry.arb_id, entry.signal_name)
+        rows = sorted(
+            {i.row() for i in self._table.selectionModel().selectedIndexes()
+             if i.column() == 0},
+            reverse=True,
+        )
+        if not rows:
+            idx = self._table.currentIndex()
+            if not idx.isValid():
+                return
+            rows = [idx.row()]
+        for row in rows:
+            if row < len(self._model.entries):
+                entry = self._model.entries[row]
+                self._model.remove_entry(row)
+                self.signal_removed.emit(entry.arb_id, entry.signal_name)
 
     def _on_clear_all(self):
         """Remove every signal row, reset the color rotation, and emit ``all_cleared``.

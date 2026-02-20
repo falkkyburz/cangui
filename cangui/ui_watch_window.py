@@ -75,6 +75,7 @@ class WatchWindow(BaseDockWindow):
         self._view.header().setStretchLastSection(True)
         self._view.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._view.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
+        self._view.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
         self._layout.addWidget(self._view)
 
         self._model.rowsInserted.connect(lambda *_: self._resize_columns())
@@ -87,10 +88,18 @@ class WatchWindow(BaseDockWindow):
         return self._view
 
     def _on_remove(self):
-        """Remove the currently selected signal from the watch list."""
-        index = self._view.currentIndex()
-        if index.isValid():
-            self._model.remove_watch(index.row())
+        """Remove all selected signals from the watch list."""
+        rows = sorted(
+            {i.row() for i in self._view.selectionModel().selectedIndexes()
+             if i.column() == 0},
+            reverse=True,
+        )
+        if not rows:
+            idx = self._view.currentIndex()
+            if idx.isValid():
+                rows = [idx.row()]
+        for row in rows:
+            self._model.remove_watch(row)
 
     def _on_move_up(self):
         """Move the selected signal one row up and follow the row with the selection."""
@@ -116,9 +125,16 @@ class WatchWindow(BaseDockWindow):
             self._view.resizeColumnToContents(i)
 
     def _on_add_to_plot(self):
-        """Emit :attr:`add_to_plot_requested` for the currently selected signal."""
-        index = self._view.currentIndex()
-        if not index.isValid():
-            return
-        entry = self._model.entries[index.row()]
-        self.add_to_plot_requested.emit(entry.arb_id, entry.signal_name, entry.unit)
+        """Emit :attr:`add_to_plot_requested` for every selected signal."""
+        rows = sorted(
+            {i.row() for i in self._view.selectionModel().selectedIndexes()
+             if i.column() == 0}
+        )
+        if not rows:
+            idx = self._view.currentIndex()
+            if idx.isValid():
+                rows = [idx.row()]
+        for row in rows:
+            if row < len(self._model.entries):
+                entry = self._model.entries[row]
+                self.add_to_plot_requested.emit(entry.arb_id, entry.signal_name, entry.unit)

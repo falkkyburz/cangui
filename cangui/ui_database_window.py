@@ -3,7 +3,7 @@ from pathlib import Path
 
 import cantools
 
-from PySide6.QtCore import Qt, Signal, QModelIndex, QTimer
+from PySide6.QtCore import Qt, Signal, QModelIndex, QTimer, QSortFilterProxyModel
 from PySide6.QtWidgets import (
     QWidget, QToolBar, QHeaderView,
     QFileDialog, QMessageBox, QStyledItemDelegate, QComboBox,
@@ -34,6 +34,48 @@ _DB_COL_WIDTHS = {
     14: 50,   # Mux
     15: 90,   # Values
 }
+
+
+class _DbSortProxy(QSortFilterProxyModel):
+    """Sort proxy for the database tree view.
+
+    Provides numeric sort ordering for integer and hex-integer columns
+    (Bus, ID, DLC, Cycle Time, Start Bit, Bit Length).  All three tree
+    levels (files, messages, signals) are sorted independently within
+    their respective parent.
+    """
+
+    def lessThan(self, left, right) -> bool:
+        """Compare two source-model cells for sort ordering.
+
+        Args:
+            left: Left-hand source model index.
+            right: Right-hand source model index.
+
+        Returns:
+            ``True`` if *left* should appear before *right* in ascending order.
+        """
+        col = left.column()
+        ld = left.data() or ""
+        rd = right.data() or ""
+
+        if col == 1:   # Bus — integer
+            try:
+                return int(ld) < int(rd)
+            except (ValueError, TypeError):
+                pass
+        elif col == 2:  # ID (hex) — hex integer
+            try:
+                return int(str(ld), 16) < int(str(rd), 16)
+            except (ValueError, TypeError):
+                pass
+        elif col in (3, 4, 5, 6):  # DLC, Cycle (ms), Start Bit, Bit Length — integer
+            try:
+                return int(ld) < int(rd)
+            except (ValueError, TypeError):
+                pass
+
+        return super().lessThan(left, right)
 
 
 class ByteOrderDelegate(QStyledItemDelegate):
@@ -175,12 +217,16 @@ class DatabaseWindow(BaseDockWindow):
         self._model.rowsRemoved.connect(lambda *_: self.database_changed.emit())
         self._model.modelReset.connect(lambda *_: self.database_changed.emit())
 
+        self._db_proxy = _DbSortProxy(self)
+        self._db_proxy.setSourceModel(self._model)
+
         self._tree = TabTreeView()
-        self._tree.setModel(self._model)
+        self._tree.setModel(self._db_proxy)
+        self._tree.setSortingEnabled(True)
         self._tree.setRootIsDecorated(True)
         self._tree.setAlternatingRowColors(True)
         self._tree.setSelectionBehavior(TabTreeView.SelectionBehavior.SelectRows)
-        self._tree.setSelectionMode(TabTreeView.SelectionMode.SingleSelection)
+        self._tree.setSelectionMode(TabTreeView.SelectionMode.ExtendedSelection)
         self._tree.setItemDelegateForColumn(COL_BYTE_ORDER, ByteOrderDelegate(self._tree))
 
         header = self._tree.header()
@@ -206,6 +252,16 @@ class DatabaseWindow(BaseDockWindow):
         """The database tree view that receives keyboard focus."""
         return self._tree
 
+    # -- Proxy helpers --
+
+    def _map_src(self, proxy_index: QModelIndex) -> QModelIndex:
+        """Map a proxy-model index to the underlying source-model index."""
+        return self._db_proxy.mapToSource(proxy_index)
+
+    def _map_proxy(self, src_index: QModelIndex) -> QModelIndex:
+        """Map a source-model index to the corresponding proxy-model index."""
+        return self._db_proxy.mapFromSource(src_index)
+
     # -- Toolbar actions --
 
     def _on_add_database(self):
@@ -219,16 +275,17 @@ class DatabaseWindow(BaseDockWindow):
         new one is created).  If a file node is selected, the tree is expanded
         to show the new child.
         """
-        index = self._tree.currentIndex()
-        if not index.isValid():
+        proxy_idx = self._tree.currentIndex()
+        if not proxy_idx.isValid():
             # Add to last file, or create one
             self._model.add_message()
             return
+        index = self._map_src(proxy_idx)
         level = self._model._get_level(index)
         if level == 0:
             # File selected — add message to this file
             self._model.add_message(index.row())
-            self._tree.expand(index)
+            self._tree.expand(proxy_idx)
         elif level == 1:
             # Message selected — add message to same file
             file_row, _ = self._model.get_message_row(index)
@@ -245,10 +302,11 @@ class DatabaseWindow(BaseDockWindow):
         Expands the file and message nodes so the new signal is immediately
         visible.
         """
-        index = self._tree.currentIndex()
-        if not index.isValid():
+        proxy_idx = self._tree.currentIndex()
+        if not proxy_idx.isValid():
             QMessageBox.information(self, "Add Signal", "Select a message first.")
             return
+        index = self._map_src(proxy_idx)
         file_row, msg_row = self._model.get_message_row(index)
         if file_row < 0 or msg_row < 0:
             QMessageBox.information(self, "Add Signal", "Select a message first.")
@@ -257,37 +315,164 @@ class DatabaseWindow(BaseDockWindow):
         # Expand the parent so the new signal is visible
         file_idx = self._model.index(file_row, 0)
         msg_idx = self._model.index(msg_row, 0, file_idx)
-        self._tree.expand(file_idx)
-        self._tree.expand(msg_idx)
+        self._tree.expand(self._map_proxy(file_idx))
+        self._tree.expand(self._map_proxy(msg_idx))
+
+    def _db_selected_indexes(self) -> list:
+        """Return source-model column-0 indexes for the current selection.
+
+        Proxy indexes from the tree's selection model are mapped to source
+        model indexes so callers can pass them directly to DatabaseModel
+        methods without going through the proxy layer.  Falls back to the
+        current index when nothing is selected.
+        """
+        col0 = [self._map_src(i)
+                for i in self._tree.selectionModel().selectedIndexes()
+                if i.column() == 0]
+        if not col0:
+            cur = self._map_src(self._tree.currentIndex())
+            if cur.isValid():
+                col0 = [self._model.index(cur.row(), 0, cur.parent())]
+        return col0
+
+    def _db_selected_signals(self) -> list[tuple[int, str, str]]:
+        """Return unique (can_id, signal_name, unit) tuples for the selection.
+
+        Signal rows contribute themselves; message rows expand to all signals;
+        file rows expand to all signals in all messages.  Results are
+        deduplicated by (can_id, signal_name).
+        """
+        seen: set[tuple[int, str]] = set()
+        result: list[tuple[int, str, str]] = []
+        for index in self._db_selected_indexes():
+            level = self._model._get_level(index)
+            if level == 2:
+                pair = self._model.get_signal(index)
+                if pair:
+                    msg, sig = pair
+                    key = (msg.can_id, sig.name)
+                    if key not in seen:
+                        seen.add(key)
+                        result.append((msg.can_id, sig.name, sig.unit))
+            elif level == 1:
+                msg = self._model.get_message(index)
+                if msg:
+                    for sig in msg.signals:
+                        key = (msg.can_id, sig.name)
+                        if key not in seen:
+                            seen.add(key)
+                            result.append((msg.can_id, sig.name, sig.unit))
+            elif level == 0:
+                file_row = index.row()
+                if 0 <= file_row < len(self._model.items):
+                    for msg in self._model.items[file_row].messages:
+                        for sig in msg.signals:
+                            key = (msg.can_id, sig.name)
+                            if key not in seen:
+                                seen.add(key)
+                                result.append((msg.can_id, sig.name, sig.unit))
+        return result
+
+    def _db_selected_messages(self) -> list[tuple]:
+        """Return unique message tuples (can_id, dlc, is_extended, name, cycle_ms, bus).
+
+        Message rows contribute themselves; signal rows resolve to their parent
+        message; file rows expand to all messages.  Deduplication is by can_id.
+        """
+        seen: set[int] = set()
+        result: list[tuple] = []
+
+        def _add_msg(msg, bus: int):
+            if msg.can_id not in seen:
+                seen.add(msg.can_id)
+                result.append((msg.can_id, msg.dlc, msg.can_id > 0x7FF,
+                                msg.name, msg.cycle_time_ms, bus))
+
+        for index in self._db_selected_indexes():
+            level = self._model._get_level(index)
+            if level == 0:
+                file_row = index.row()
+                if 0 <= file_row < len(self._model.items):
+                    file_item = self._model.items[file_row]
+                    for msg in file_item.messages:
+                        _add_msg(msg, file_item.bus)
+            elif level == 1:
+                msg = self._model.get_message(index)
+                if msg:
+                    file_row, _ = self._model.get_message_row(index)
+                    bus = (self._model._items[file_row].bus
+                           if 0 <= file_row < len(self._model._items) else 1)
+                    _add_msg(msg, bus)
+            elif level == 2:
+                pair = self._model.get_signal(index)
+                if pair:
+                    msg, _ = pair
+                    file_row, _ = self._model.get_message_row(index)
+                    bus = (self._model._items[file_row].bus
+                           if 0 <= file_row < len(self._model._items) else 1)
+                    _add_msg(msg, bus)
+        return result
 
     def _on_remove_selected(self):
-        """Remove the currently selected file, message, or signal node."""
-        index = self._tree.currentIndex()
-        if not index.isValid():
+        """Remove all selected file, message, or signal nodes.
+
+        When both a parent and one of its children are selected the child is
+        skipped — the parent removal takes the children with it.  Items are
+        sorted deepest-level-first, highest-row-first within each level and
+        removed via QPersistentModelIndex so that earlier removals do not
+        invalidate later indices.
+        """
+        from PySide6.QtCore import QPersistentModelIndex
+        indexes = self._db_selected_indexes()
+        if not indexes:
             return
-        self._model.remove_row(index)
+
+        # Build identity set for ancestor-filtering
+        selected_set = {(i.internalId(), i.row()) for i in indexes}
+
+        def has_ancestor_selected(idx):
+            p = idx.parent()
+            while p.isValid():
+                if (p.internalId(), p.row()) in selected_set:
+                    return True
+                p = p.parent()
+            return False
+
+        to_remove = [i for i in indexes if not has_ancestor_selected(i)]
+        # Deepest level first; within the same level highest row first
+        to_remove.sort(key=lambda i: (-self._model._get_level(i), -i.row()))
+        persistent = [QPersistentModelIndex(i) for i in to_remove]
+        for pidx in persistent:
+            if pidx.isValid():
+                self._model.remove_row(
+                    self._model.index(pidx.row(), 0, pidx.parent())
+                )
 
     def _on_move_up(self):
         """Move the selected node one row up and follow the selection."""
-        index = self._tree.currentIndex()
-        if not index.isValid():
+        proxy_idx = self._tree.currentIndex()
+        if not proxy_idx.isValid():
             return
+        index = self._map_src(proxy_idx)
         row = index.row()
         self._model.move_up(index)
         parent = index.parent()
-        new_index = self._model.index(row - 1, 0, parent)
-        self._tree.setCurrentIndex(new_index)
+        self._tree.setCurrentIndex(
+            self._map_proxy(self._model.index(row - 1, 0, parent))
+        )
 
     def _on_move_down(self):
         """Move the selected node one row down and follow the selection."""
-        index = self._tree.currentIndex()
-        if not index.isValid():
+        proxy_idx = self._tree.currentIndex()
+        if not proxy_idx.isValid():
             return
+        index = self._map_src(proxy_idx)
         row = index.row()
         self._model.move_down(index)
         parent = index.parent()
-        new_index = self._model.index(row + 1, 0, parent)
-        self._tree.setCurrentIndex(new_index)
+        self._tree.setCurrentIndex(
+            self._map_proxy(self._model.index(row + 1, 0, parent))
+        )
 
     def _on_import_dbc(self):
         """Open a file dialog and import a DBC file, showing an error on failure."""
@@ -348,84 +533,59 @@ class DatabaseWindow(BaseDockWindow):
             QMessageBox.warning(self, "Export Error", f"Failed to export JSON:\n{e}")
 
     def _on_add_to_watch(self):
-        """Add the selected signal (or all signals of the selected message) to Watch.
+        """Add all selected signals (or signals of selected messages) to Watch.
 
-        If a signal row is selected only that signal is added.  If a message
-        row is selected all of its signals are added.  An information dialog
-        is shown if neither could be resolved.
+        Signal rows contribute themselves; message rows expand to all their
+        signals; file rows expand to all signals in all messages.  Duplicates
+        (same can_id + name) are silently ignored.
 
         Emits:
-            add_to_watch_requested: Once per signal with
-                ``(can_id, name, unit, "Db")``.
+            add_to_watch_requested: Once per unique signal with
+                ``(can_id, name, unit, "Rx")``.
         """
-        index = self._tree.currentIndex()
-        # Signal selected → add that one signal
-        result = self._model.get_signal(index)
-        if result is not None:
-            msg, sig = result
-            self.add_to_watch_requested.emit(msg.can_id, sig.name, sig.unit, "Db")
+        pairs = self._db_selected_signals()
+        if not pairs:
+            QMessageBox.information(self, "Add to Watch",
+                                    "Select a message or signal.")
             return
-        # Message selected → add all signals in the message
-        msg = self._model.get_message(index)
-        if msg is not None:
-            for sig in msg.signals:
-                self.add_to_watch_requested.emit(msg.can_id, sig.name, sig.unit, "Db")
-            return
-        QMessageBox.information(self, "Add to Watch",
-                                "Select a message or signal.")
+        for can_id, name, unit in pairs:
+            self.add_to_watch_requested.emit(can_id, name, unit, "Rx")
 
     def _on_add_to_plot(self):
-        """Add the selected signal (or all signals of the selected message) to Plot.
+        """Add all selected signals (or signals of selected messages) to Plot.
 
-        If a signal row is selected only that signal is added.  If a message
-        row is selected all of its signals are added.  An information dialog
-        is shown if neither could be resolved.
+        Applies the same expansion and deduplication logic as
+        :meth:`_on_add_to_watch`.
 
         Emits:
-            add_to_plot_requested: Once per signal with ``(can_id, name, unit)``.
+            add_to_plot_requested: Once per unique signal with
+                ``(can_id, name, unit)``.
         """
-        index = self._tree.currentIndex()
-        # Signal selected → add that one signal
-        result = self._model.get_signal(index)
-        if result is not None:
-            msg, sig = result
-            self.add_to_plot_requested.emit(msg.can_id, sig.name, sig.unit)
+        pairs = self._db_selected_signals()
+        if not pairs:
+            QMessageBox.information(self, "Add to Plot",
+                                    "Select a message or signal.")
             return
-        # Message selected → add all signals in the message
-        msg = self._model.get_message(index)
-        if msg is not None:
-            for sig in msg.signals:
-                self.add_to_plot_requested.emit(msg.can_id, sig.name, sig.unit)
-            return
-        QMessageBox.information(self, "Add to Plot",
-                                "Select a message or signal.")
+        for can_id, name, unit in pairs:
+            self.add_to_plot_requested.emit(can_id, name, unit)
 
     def _on_add_to_tx(self):
-        """Add the message containing the current selection to the TX list.
+        """Add all selected messages to the TX list.
 
-        Resolves both message and signal selections to the parent message.
-        Uses the source file's bus number for the new TX entry.
+        Message rows are added directly; signal rows resolve to their parent
+        message; file rows expand to all messages.  Duplicates (same can_id)
+        are skipped.  Uses the source file's bus number for each TX entry.
 
         Emits:
-            add_to_tx_requested: With ``(can_id, dlc, is_extended, name,
-                cycle_ms, bus)`` when a message is successfully resolved.
+            add_to_tx_requested: Once per unique message with
+                ``(can_id, dlc, is_extended, name, cycle_ms, bus)``.
         """
-        index = self._tree.currentIndex()
-        # Resolve to the message regardless of whether a message or signal is selected
-        msg = self._model.get_message(index)
-        if msg is None:
-            result = self._model.get_signal(index)
-            if result is not None:
-                msg, _ = result
-        if msg is None:
+        messages = self._db_selected_messages()
+        if not messages:
             QMessageBox.information(self, "Add to TX", "Select a message first.")
             return
-        file_row, _ = self._model.get_message_row(index)
-        bus = (self._model._items[file_row].bus
-               if 0 <= file_row < len(self._model._items) else 1)
-        is_extended = msg.can_id > 0x7FF
-        self.add_to_tx_requested.emit(
-            msg.can_id, msg.dlc, is_extended, msg.name, msg.cycle_time_ms, bus)
+        for args in messages:
+            self.add_to_tx_requested.emit(*args)
 
     # -- DBC import/export --
 
