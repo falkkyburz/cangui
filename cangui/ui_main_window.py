@@ -539,6 +539,11 @@ class MainWindow(QMainWindow):
         target.bus.send(msg)
         # Record TX frame in the trace (only when recording is active)
         self._trace_model.on_message(msg, "Tx")
+        # Feed TX frames to watch/plot so their values update in the UI.
+        # list.append() is GIL-safe, matching how the trace model is called.
+        self._watch_model.on_message(msg)
+        self._plot_list_win.on_message(msg)
+        self._plot_service.on_message(msg)
 
     # -- TX management --
 
