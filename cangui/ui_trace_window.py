@@ -6,10 +6,10 @@ TRC or BLF format, configuring replay speed, and live-filtering displayed
 messages by CAN ID or text.
 """
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QSortFilterProxyModel
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QToolBar, QTableView,
-    QFileDialog, QComboBox, QLabel, QLineEdit,
+    QFileDialog, QComboBox, QLabel, QLineEdit, QHeaderView,
 )
 from PySide6.QtGui import QAction
 
@@ -17,6 +17,73 @@ from cangui.model_trace import TraceModel
 from cangui.icons import icon as _icon
 from cangui.theme import SECONDARY_TEXT_STYLE
 from cangui.ui_base_dock_window import BaseDockWindow
+
+
+class _TraceSortProxy(QSortFilterProxyModel):
+    """Sort/filter proxy for the trace table view.
+
+    Applies numeric sorting for the frame number (#), timestamp, CAN-ID, and
+    DLC columns.  Text filtering via ``setFilterFixedString`` compares the
+    filter text against every visible column.
+    """
+
+    def lessThan(self, left, right) -> bool:
+        """Compare two trace rows for sort ordering.
+
+        Args:
+            left: Left-hand source model index.
+            right: Right-hand source model index.
+
+        Returns:
+            ``True`` if *left* should appear before *right* in ascending order.
+        """
+        col = left.column()
+        ld = left.data() or ""
+        rd = right.data() or ""
+
+        if col == 0:  # # — integer
+            try:
+                return int(ld) < int(rd)
+            except (ValueError, TypeError):
+                pass
+        elif col == 1:  # Time — float
+            try:
+                return float(ld) < float(rd)
+            except (ValueError, TypeError):
+                pass
+        elif col == 3:  # CAN-ID — hex integer
+            try:
+                return int(ld, 16) < int(rd, 16)
+            except (ValueError, TypeError):
+                pass
+        elif col == 6:  # DLC — integer
+            try:
+                return int(ld) < int(rd)
+            except (ValueError, TypeError):
+                pass
+
+        return super().lessThan(left, right)
+
+    def filterAcceptsRow(self, source_row: int, source_parent) -> bool:
+        """Accept a row when the filter text appears in any column.
+
+        Args:
+            source_row: Row index in the source model.
+            source_parent: Parent index (always invalid for a flat table).
+
+        Returns:
+            ``True`` when the row should be visible.
+        """
+        pattern = self.filterRegularExpression().pattern()
+        if not pattern:
+            return True
+        model = self.sourceModel()
+        for col in range(model.columnCount()):
+            idx = model.index(source_row, col, source_parent)
+            text = str(model.data(idx) or "")
+            if pattern.lower() in text.lower():
+                return True
+        return False
 
 
 class TraceWindow(BaseDockWindow):
@@ -56,6 +123,10 @@ class TraceWindow(BaseDockWindow):
         super().__init__(parent)
         self._model = model
         self._auto_scroll = True
+
+        # Sort/filter proxy — wraps the raw TraceModel
+        self._proxy = _TraceSortProxy(self)
+        self._proxy.setSourceModel(self._model)
 
         # Toolbar
         toolbar = QToolBar()
@@ -115,17 +186,21 @@ class TraceWindow(BaseDockWindow):
         self._filter_edit = QLineEdit()
         self._filter_edit.setPlaceholderText("CAN ID or text...")
         self._filter_edit.setClearButtonEnabled(True)
+        self._filter_edit.textChanged.connect(self._on_filter_changed)
         filter_layout.addWidget(self._filter_edit)
         self._layout.addLayout(filter_layout)
 
         # Table view
         self._table = QTableView()
-        self._table.setModel(self._model)
+        self._table.setModel(self._proxy)
         self._table.setAlternatingRowColors(True)
         self._table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QTableView.SelectionMode.ExtendedSelection)
+        self._table.setSortingEnabled(True)
         self._table.verticalHeader().setVisible(False)
         header = self._table.horizontalHeader()
         header.setStretchLastSection(True)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         # Use fixed widths instead of ResizeToContents (which measures ALL rows)
         for col, width in enumerate([60, 80, 35, 70, 35, 45, 35, 200]):
             header.resizeSection(col, width)
@@ -257,7 +332,7 @@ class TraceWindow(BaseDockWindow):
     def _on_entries_committed(self):
         """Refresh the message-count label and auto-scroll to the newest row."""
         self._count_label.setText(f"Messages: {self._model.message_count}")
-        if self._auto_scroll:
+        if self._auto_scroll and not self._filter_edit.text():
             self._table.scrollToBottom()
 
     def _on_model_reset(self):
@@ -278,6 +353,16 @@ class TraceWindow(BaseDockWindow):
         else:
             self._file_label.setText("")
             self._file_label.setToolTip("")
+
+    def _on_filter_changed(self, text: str):
+        """Apply the filter text to the proxy model.
+
+        Args:
+            text: Free-form filter string; an empty string shows all rows.
+        """
+        self._proxy.setFilterFixedString(text)
+        if self._auto_scroll and not text:
+            self._table.scrollToBottom()
 
     def _on_rate_updated(self, rate: int):
         """Refresh the rate label in the status bar.

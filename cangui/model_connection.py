@@ -210,11 +210,22 @@ class ConnectionModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.ForegroundRole and col == 6:
             from PySide6.QtGui import QColor
             if conn.status == "OK":
-                return QColor("green")
+                return QColor("#2E7D32")   # green
             elif conn.status == "Bus Heavy":
                 return QColor("#E67E00")   # amber — error-passive, still operational
             elif conn.status in ("Bus Off",) or conn.status.startswith("Error"):
-                return QColor("red")
+                return QColor("#C62828")   # red
+
+        if role == Qt.ItemDataRole.DecorationRole and col == 6:
+            from cangui.icons import icon as _icon
+            if conn.status == "OK":
+                return _icon("status-ok")
+            elif conn.status == "Bus Heavy":
+                return _icon("status-warn")
+            elif conn.status in ("Bus Off",) or conn.status.startswith("Error"):
+                return _icon("status-error")
+            else:
+                return _icon("status-off")
 
         return None
 

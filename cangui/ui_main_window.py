@@ -520,16 +520,22 @@ class MainWindow(QMainWindow):
                 msg.data = data
                 if msg.row >= 0:
                     self._tx_display_update.emit(msg.row, data)
+        sent = False
         for conn in self._can_service.connections:
             if conn.bus.is_connected and conn.config.bus_number == msg.bus:
                 conn.bus.send(msg)
-                return
-        # Fallback: send on first connected bus
-        for conn in self._can_service.connections:
-            if conn.bus.is_connected:
-                conn.bus.send(msg)
-                return
-        raise RuntimeError("No connected bus")
+                sent = True
+                break
+        if not sent:
+            for conn in self._can_service.connections:
+                if conn.bus.is_connected:
+                    conn.bus.send(msg)
+                    sent = True
+                    break
+        if not sent:
+            raise RuntimeError("No connected bus")
+        # Record TX frame in the trace (only when recording is active)
+        self._trace_model.on_message(msg, "Tx")
 
     # -- TX management --
 

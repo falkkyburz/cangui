@@ -30,6 +30,7 @@ Two QTimers decouple incoming CAN traffic from Qt view refreshes:
    ``dataChanged`` for the child signal rows so the view repaints them.
 """
 
+import time
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import Qt, QAbstractItemModel, QModelIndex, QTimer
@@ -101,11 +102,15 @@ class RxMessageItem:
     cycle_time_ms: float = 0.0
     count: int = 0
     last_timestamp: float = 0.0
+    last_seen_monotonic: float = field(default_factory=time.monotonic)
     signals: list[SignalItem] = field(default_factory=list)
 
 
 COLUMNS = ["Bus", "ID (hex)", "Ext", "Type", "Length", "Symbol",
            "Data (hex)", "Timing Errors", "Cycle Time", "Count"]
+
+STALE_TIMEOUT_S = 5.0   # seconds with no update before a row is greyed out
+_STALE_COLOR = QColor("#808080")
 
 
 def _mux_prefix(sig: SignalItem) -> str:
@@ -175,6 +180,12 @@ class RxMessageModel(QAbstractItemModel):
         self._signal_timer.setInterval(200)
         self._signal_timer.timeout.connect(self._update_signals)
         self._signal_timer.start()
+
+        # Stale detection: check every 500 ms and grey out rows not updated in 5 s
+        self._stale_timer = QTimer(self)
+        self._stale_timer.setInterval(500)
+        self._stale_timer.timeout.connect(self._check_stale)
+        self._stale_timer.start()
 
     def set_decoder(self, decoder: SignalDecoder):
         """Replace the signal decoder used for symbol resolution and decoding.
@@ -328,10 +339,24 @@ class RxMessageModel(QAbstractItemModel):
             return None
 
         if role == Qt.ItemDataRole.ForegroundRole:
-            if self._is_top_level(index) and 0 <= index.row() < len(self._items):
-                item = self._items[index.row()]
+            if 0 <= index.row() < len(self._items) or not self._is_top_level(index):
+                # Resolve item for both top-level and child rows
+                if self._is_top_level(index):
+                    if index.row() < len(self._items):
+                        item = self._items[index.row()]
+                    else:
+                        return None
+                else:
+                    parent_row = index.internalId() - 1
+                    if 0 <= parent_row < len(self._items):
+                        item = self._items[parent_row]
+                    else:
+                        return None
                 if item.is_error_frame:
                     return QColor(Qt.GlobalColor.red)
+                elapsed = time.monotonic() - item.last_seen_monotonic
+                if elapsed > STALE_TIMEOUT_S:
+                    return _STALE_COLOR
             return None
 
         col = index.column()
@@ -542,6 +567,7 @@ class RxMessageModel(QAbstractItemModel):
                 item.length = msg.dlc
                 item.count += 1
                 item.last_timestamp = now
+                item.last_seen_monotonic = time.monotonic()
                 rows_to_update.add(row)
             else:
                 new_row = len(self._items)
@@ -605,6 +631,37 @@ class RxMessageModel(QAbstractItemModel):
                     self.index(0, 0, parent_idx),
                     self.index(len(item.signals) - 1,
                                self.columnCount() - 1, parent_idx),
+                )
+
+    def _check_stale(self):
+        """Periodic timer (500 ms): emit dataChanged for rows that just became stale.
+
+        A row is considered stale when ``time.monotonic() - item.last_seen_monotonic``
+        exceeds ``STALE_TIMEOUT_S``.  Only rows that have *crossed* the threshold
+        since the last check emit ``dataChanged`` so we don't flood the view.
+        """
+        if not self._items:
+            return
+        now = time.monotonic()
+        stale_rows = []
+        for row, item in enumerate(self._items):
+            elapsed = now - item.last_seen_monotonic
+            # Check whether the row crossed the stale boundary since last poll.
+            # We re-emit within a small window around the threshold so the colour
+            # change fires once rather than every 500 ms.
+            if STALE_TIMEOUT_S <= elapsed < STALE_TIMEOUT_S + 0.6:
+                stale_rows.append(row)
+        for row in stale_rows:
+            top_left = self.index(row, 0)
+            bot_right = self.index(row, self.columnCount() - 1)
+            self.dataChanged.emit(top_left, bot_right)
+            # Also refresh signal children
+            item = self._items[row]
+            if item.signals:
+                parent_idx = self.index(row, 0)
+                self.dataChanged.emit(
+                    self.index(0, 0, parent_idx),
+                    self.index(len(item.signals) - 1, self.columnCount() - 1, parent_idx),
                 )
 
     def clear(self):

@@ -45,6 +45,7 @@ class TxSignalItem:
     unit: str = ""
     is_multiplexer: bool = False
     multiplexer_ids: list[int] | None = None
+    choices: list[str] | None = None  # named values from value table; drives combobox editor
 
 
 @dataclass
@@ -288,6 +289,12 @@ class TxMessageModel(QAbstractItemModel):
             if index.row() >= len(sigs):
                 return None
             sig = sigs[index.row()]
+
+            if role == Qt.ItemDataRole.UserRole:
+                # Return the choices list for the combobox delegate (col 6 only)
+                if col == 6:
+                    return sig.choices
+                return None
 
             if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
                 match col:
@@ -559,6 +566,7 @@ class TxMessageModel(QAbstractItemModel):
                 TxSignalItem(
                     name=s.name, value=s.value, unit=s.unit,
                     is_multiplexer=s.is_multiplexer, multiplexer_ids=s.multiplexer_ids,
+                    choices=s.choices,
                 )
                 for s in new_sigs
             ]

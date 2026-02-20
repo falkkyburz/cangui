@@ -45,6 +45,7 @@ class DecodedSignal:
     unit: str
     is_multiplexer: bool = False
     multiplexer_ids: list[int] | None = None
+    choices: list[str] | None = None  # ordered list of named values for combobox editors
 
     @property
     def display_value(self) -> str:
@@ -159,16 +160,20 @@ class SignalDecoder:
         msg = self._db.dbc.get_message_by_id(arb_id)
         if msg is None:
             return []
-        return [
-            DecodedSignal(
+        result = []
+        for sig in msg.signals:
+            choices = None
+            if sig.choices:
+                choices = [str(v) for v in sig.choices.values()]
+            result.append(DecodedSignal(
                 name=sig.name,
                 value=sig.initial if sig.initial is not None else 0,
                 unit=sig.unit or "",
                 is_multiplexer=sig.is_multiplexer,
                 multiplexer_ids=list(sig.multiplexer_ids) if sig.multiplexer_ids is not None else None,
-            )
-            for sig in msg.signals
-        ]
+                choices=choices,
+            ))
+        return result
 
     def get_message_info(self, arb_id: int) -> tuple[int, int | None] | None:
         """Return the byte length and cycle time for a message definition.
