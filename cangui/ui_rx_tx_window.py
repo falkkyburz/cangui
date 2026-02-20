@@ -56,8 +56,10 @@ class _ClickOutsideFilter(QObject):
             target = QApplication.widgetAt(event.globalPosition().toPoint())
             if target is not None and self._inside_window(target):
                 if not any(self._inside_view(target, v) for v in self._views):
-                    for v in self._views:
-                        v.clearSelection()
+                    from PySide6.QtWidgets import QAbstractButton
+                    if not isinstance(target, QAbstractButton):
+                        for v in self._views:
+                            v.clearSelection()
         return False  # never consume the event
 
     def _inside_window(self, widget: QWidget) -> bool:
@@ -675,26 +677,165 @@ class RxTxWindow(BaseDockWindow):
         """Clear all received messages from the RX model."""
         self._rx_model.clear()
 
-    def _remove_tx(self):
-        """Remove all selected TX messages, supporting multi-selection.
+    # -- Selection helpers -------------------------------------------------
 
-        Both top-level message rows and signal child rows resolve to the
-        parent message row.  Rows are removed in reverse order so that earlier
-        indices remain valid throughout the operation.
+    def _rx_proxy_selection(self) -> list:
+        """Return the RX selection, falling back to the current index.
+
+        Uses ``selectedIndexes()`` filtered to column 0 rather than
+        ``selectedRows()``, which is more robust when a sort/filter proxy
+        is installed and not all columns are selected in the selection model.
+
+        Returns:
+            List of proxy ``QModelIndex`` objects at column 0.
         """
-        selected = self._tx_view.selectionModel().selectedRows()
-        if not selected:
-            index = self._tx_view.currentIndex()
-            if index.isValid():
-                selected = [index]
-        rows: set[int] = set()
-        for proxy_idx in selected:
-            src = self._tx_proxy.mapToSource(proxy_idx)
-            if src.parent().isValid():
-                rows.add(src.parent().row())
+        col0 = [i for i in self._rx_view.selectionModel().selectedIndexes()
+                if i.column() == 0]
+        if not col0:
+            cur = self._rx_view.currentIndex()
+            if cur.isValid():
+                col0 = [self._rx_view.model().index(cur.row(), 0, cur.parent())]
+        return col0
+
+    def _tx_proxy_selection(self) -> list:
+        """Return the TX selection, falling back to the current index.
+
+        Uses ``selectedIndexes()`` filtered to column 0 rather than
+        ``selectedRows()``, which is more robust when a sort/filter proxy
+        is installed and not all columns are selected in the selection model.
+
+        Returns:
+            List of proxy ``QModelIndex`` objects at column 0.
+        """
+        col0 = [i for i in self._tx_view.selectionModel().selectedIndexes()
+                if i.column() == 0]
+        if not col0:
+            cur = self._tx_view.currentIndex()
+            if cur.isValid():
+                col0 = [self._tx_view.model().index(cur.row(), 0, cur.parent())]
+        return col0
+
+    def _rx_selected_signals(self) -> list:
+        """Collect all unique (RxMessageItem, SignalItem) pairs from the RX selection.
+
+        Selection rules:
+
+        * **Message row selected** → every decoded signal of that message is
+          included (recursive expansion into children).
+        * **Signal child row selected, parent NOT selected** → only that specific
+          signal is included.
+        * **Both parent and child selected** → the child is *skipped* because
+          the parent expansion already covers it; no signal appears twice.
+
+        Returns:
+            Ordered list of ``(RxMessageItem, SignalItem)`` pairs, deduplicated
+            by ``(can_id, signal_name)``.
+        """
+        proxy_sel = self._rx_proxy_selection()
+
+        # First pass: record which top-level message rows are directly selected.
+        selected_msg_rows: set[int] = set()
+        for pidx in proxy_sel:
+            src = self._rx_proxy.mapToSource(pidx)
+            if not src.parent().isValid():
+                selected_msg_rows.add(src.row())
+
+        result: list = []
+        seen: set = set()   # (can_id, signal_name) deduplication
+
+        for pidx in proxy_sel:
+            src = self._rx_proxy.mapToSource(pidx)
+            if not src.parent().isValid():
+                # Top-level message row → expand to all decoded signals.
+                item = self._rx_model.get_item(src)
+                if item:
+                    for sig in item.signals:
+                        key = (item.can_id, sig.name)
+                        if key not in seen:
+                            seen.add(key)
+                            result.append((item, sig))
             else:
-                rows.add(src.row())
-        for row in sorted(rows, reverse=True):
+                # Signal child row → include only when its parent is NOT selected
+                # (otherwise the parent expansion already covers this signal).
+                if src.parent().row() in selected_msg_rows:
+                    continue
+                pair = self._rx_model.get_signal_at(src)
+                if pair:
+                    item, sig = pair
+                    key = (item.can_id, sig.name)
+                    if key not in seen:
+                        seen.add(key)
+                        result.append((item, sig))
+
+        return result
+
+    def _tx_selected_signals(self) -> list:
+        """Collect all unique (TxMessageItem, TxSignalItem) pairs from the TX selection.
+
+        Applies the same parent-priority / deduplication logic as
+        :meth:`_rx_selected_signals`.
+
+        Returns:
+            Ordered list of ``(TxMessageItem, TxSignalItem)`` pairs.
+        """
+        proxy_sel = self._tx_proxy_selection()
+
+        selected_msg_rows: set[int] = set()
+        for pidx in proxy_sel:
+            src = self._tx_proxy.mapToSource(pidx)
+            if not src.parent().isValid():
+                selected_msg_rows.add(src.row())
+
+        result: list = []
+        seen: set = set()
+
+        for pidx in proxy_sel:
+            src = self._tx_proxy.mapToSource(pidx)
+            if not src.parent().isValid():
+                item = self._tx_model.get_item(src.row())
+                if item:
+                    for sig in item.signals:
+                        key = (item.can_id, sig.name)
+                        if key not in seen:
+                            seen.add(key)
+                            result.append((item, sig))
+            else:
+                if src.parent().row() in selected_msg_rows:
+                    continue
+                pair = self._tx_model.get_signal_at(src)
+                if pair:
+                    item, sig = pair
+                    key = (item.can_id, sig.name)
+                    if key not in seen:
+                        seen.add(key)
+                        result.append((item, sig))
+
+        return result
+
+    def _tx_selected_message_rows(self) -> list[int]:
+        """Return sorted, unique source-model message row indices for the TX selection.
+
+        Both top-level message rows and signal child rows resolve to their
+        parent message row.
+
+        Returns:
+            Sorted list of unique source-model row indices.
+        """
+        rows: set[int] = set()
+        for pidx in self._tx_proxy_selection():
+            src = self._tx_proxy.mapToSource(pidx)
+            rows.add(src.parent().row() if src.parent().isValid() else src.row())
+        return sorted(rows)
+
+    # -- Action handlers ---------------------------------------------------
+
+    def _remove_tx(self):
+        """Remove all selected TX messages.
+
+        Resolves signal child rows to their parent message.  Rows are removed
+        in reverse order so earlier indices remain valid throughout.
+        """
+        for row in sorted(self._tx_selected_message_rows(), reverse=True):
             self._tx_model.remove_message(row)
 
     def _clear_tx_counters(self):
@@ -730,25 +871,9 @@ class RxTxWindow(BaseDockWindow):
         self._tx_view.setCurrentIndex(new_proxy)
 
     def _duplicate_tx(self):
-        """Deep-copy all selected TX messages and append them with count and cycle reset.
-
-        Each clone has ``count = 0`` and ``cycle_enabled = False`` so it starts
-        in a clean, stopped state.
-        """
-        selected = self._tx_view.selectionModel().selectedRows()
-        if not selected:
-            index = self._tx_view.currentIndex()
-            if index.isValid():
-                selected = [index]
-        rows: set[int] = set()
-        for proxy_idx in selected:
-            src = self._tx_proxy.mapToSource(proxy_idx)
-            if src.parent().isValid():
-                rows.add(src.parent().row())
-            else:
-                rows.add(src.row())
+        """Deep-copy all selected TX messages and append them with count / cycle reset."""
         from copy import deepcopy
-        for row in sorted(rows):
+        for row in self._tx_selected_message_rows():
             item = self._tx_model.get_item(row)
             if item:
                 clone = deepcopy(item)
@@ -770,26 +895,13 @@ class RxTxWindow(BaseDockWindow):
     def _send_once(self):
         """Transmit all selected TX messages once and increment their send counters.
 
-        Supports multi-selection: every uniquely selected top-level message row
-        is transmitted in ascending order.  Does nothing if no callback has
-        been registered or no row is selected.
+        Signal child rows resolve to their parent message.  All uniquely
+        selected messages are sent in ascending row order.
         """
         if not hasattr(self, "_send_once_callback"):
             return
-        selected = self._tx_view.selectionModel().selectedRows()
-        if not selected:
-            index = self._tx_view.currentIndex()
-            if index.isValid():
-                selected = [index]
-        rows: set[int] = set()
-        for proxy_idx in selected:
-            src = self._tx_proxy.mapToSource(proxy_idx)
-            if src.parent().isValid():
-                rows.add(src.parent().row())
-            else:
-                rows.add(src.row())
         from cangui.can_message import CanMessage
-        for row in sorted(rows):
+        for row in self._tx_selected_message_rows():
             item = self._tx_model.get_item(row)
             if item:
                 msg = CanMessage(
@@ -804,170 +916,87 @@ class RxTxWindow(BaseDockWindow):
                 self._tx_model.increment_count(row)
 
     def _rx_context_menu(self, pos):
-        """Show a context menu on the RX view with Watch and Plot options.
+        """Show a context menu for the RX view that respects the full multi-selection.
 
-        If the right-clicked index resolves to a decoded signal, the menu
-        offers single-signal Watch/Plot actions.  If it resolves to a message
-        row that has signals, bulk "Add All Signals" actions are offered instead.
+        The menu labels report how many signals will be affected so the user
+        knows the scope of the action before clicking.
 
         Args:
             pos: Viewport-relative position of the right-click event.
         """
-        index = self._rx_view.indexAt(pos)
-        if not index.isValid():
+        if not self._rx_view.indexAt(pos).isValid():
             return
-
-        # Map proxy index → source index before querying the source model
-        src_index = self._rx_proxy.mapToSource(index)
 
         from PySide6.QtWidgets import QMenu
         menu = QMenu(self)
 
-        result = self._rx_model.get_signal_at(src_index)
-        if result is not None:
-            item, sig = result
-            watch_action = menu.addAction(f"Add '{sig.name}' to Watch")
-            watch_action.triggered.connect(
-                lambda: self.add_to_watch_requested.emit(item.can_id, sig.name, sig.unit, "Rx")
-            )
-            plot_action = menu.addAction(f"Add '{sig.name}' to Plot")
-            plot_action.triggered.connect(
-                lambda: self.add_to_plot_requested.emit(item.can_id, sig.name, sig.unit)
-            )
+        pairs = self._rx_selected_signals()
+        n = len(pairs)
+        if n == 0:
+            return
+        elif n == 1:
+            item, sig = pairs[0]
+            watch_lbl = f"Add '{sig.name}' to Watch"
+            plot_lbl  = f"Add '{sig.name}' to Plot"
         else:
-            item = self._rx_model.get_item(src_index)
-            if item and item.signals:
-                action = menu.addAction("Add All Signals to Watch")
-                action.triggered.connect(lambda: self._add_all_rx_to_watch(item))
-                plot_action = menu.addAction("Add All Signals to Plot")
-                plot_action.triggered.connect(lambda: self._add_all_rx_to_plot(item))
+            watch_lbl = f"Add {n} signals to Watch"
+            plot_lbl  = f"Add {n} signals to Plot"
 
-        if not menu.isEmpty():
-            menu.exec(self._rx_view.viewport().mapToGlobal(pos))
+        menu.addAction(watch_lbl).triggered.connect(self._add_rx_to_watch)
+        menu.addAction(plot_lbl).triggered.connect(self._add_rx_to_plot)
+        menu.exec(self._rx_view.viewport().mapToGlobal(pos))
 
     def _add_rx_to_watch(self):
-        """Add selected RX signals (or all signals of selected messages) to Watch.
+        """Add all uniquely-selected RX signals to Watch.
 
-        Supports multi-selection: signals from every selected row are added.
+        Selecting a message row recursively includes all its decoded signals.
+        Selecting individual signal children includes only those signals.
+        No signal is emitted twice even when both parent and children are
+        selected simultaneously.
 
         Emits:
-            add_to_watch_requested: For each signal added, with
+            add_to_watch_requested: Once per unique signal with
                 ``(can_id, name, unit, "Rx")``.
         """
-        selected = self._rx_view.selectionModel().selectedRows()
-        if not selected:
-            index = self._rx_view.currentIndex()
-            if index.isValid():
-                selected = [index]
-        for proxy_idx in selected:
-            src = self._rx_proxy.mapToSource(proxy_idx)
-            result = self._rx_model.get_signal_at(src)
-            if result is not None:
-                item, sig = result
-                self.add_to_watch_requested.emit(item.can_id, sig.name, sig.unit, "Rx")
-            else:
-                item = self._rx_model.get_item(src)
-                if item and item.signals:
-                    self._add_all_rx_to_watch(item)
-
-    def _add_rx_to_plot(self):
-        """Add selected RX signals (or all signals of selected messages) to Plot.
-
-        Supports multi-selection: signals from every selected row are added.
-
-        Emits:
-            add_to_plot_requested: For each signal added, with
-                ``(can_id, name, unit)``.
-        """
-        selected = self._rx_view.selectionModel().selectedRows()
-        if not selected:
-            index = self._rx_view.currentIndex()
-            if index.isValid():
-                selected = [index]
-        for proxy_idx in selected:
-            src = self._rx_proxy.mapToSource(proxy_idx)
-            result = self._rx_model.get_signal_at(src)
-            if result is not None:
-                item, sig = result
-                self.add_to_plot_requested.emit(item.can_id, sig.name, sig.unit)
-            else:
-                item = self._rx_model.get_item(src)
-                if item and item.signals:
-                    self._add_all_rx_to_plot(item)
-
-    def _add_tx_to_watch(self):
-        """Add selected TX signals (or all signals of selected messages) to Watch.
-
-        Supports multi-selection: signals from every selected row are added.
-
-        Emits:
-            add_to_watch_requested: For each signal added, with
-                ``(can_id, name, unit, "Tx")``.
-        """
-        selected = self._tx_view.selectionModel().selectedRows()
-        if not selected:
-            index = self._tx_view.currentIndex()
-            if index.isValid():
-                selected = [index]
-        for proxy_idx in selected:
-            src = self._tx_proxy.mapToSource(proxy_idx)
-            result = self._tx_model.get_signal_at(src)
-            if result is not None:
-                item, sig = result
-                self.add_to_watch_requested.emit(item.can_id, sig.name, sig.unit, "Tx")
-            else:
-                item = self._tx_model.get_item_at(src)
-                if item and item.signals:
-                    for sig in item.signals:
-                        self.add_to_watch_requested.emit(item.can_id, sig.name, sig.unit, "Tx")
-
-    def _add_tx_to_plot(self):
-        """Add selected TX signals (or all signals of selected messages) to Plot.
-
-        Supports multi-selection: signals from every selected row are added.
-
-        Emits:
-            add_to_plot_requested: For each signal added, with
-                ``(can_id, name, unit)``.
-        """
-        selected = self._tx_view.selectionModel().selectedRows()
-        if not selected:
-            index = self._tx_view.currentIndex()
-            if index.isValid():
-                selected = [index]
-        for proxy_idx in selected:
-            src = self._tx_proxy.mapToSource(proxy_idx)
-            result = self._tx_model.get_signal_at(src)
-            if result is not None:
-                item, sig = result
-                self.add_to_plot_requested.emit(item.can_id, sig.name, sig.unit)
-            else:
-                item = self._tx_model.get_item_at(src)
-                if item and item.signals:
-                    for sig in item.signals:
-                        self.add_to_plot_requested.emit(item.can_id, sig.name, sig.unit)
-
-    def _add_all_rx_to_watch(self, item):
-        """Emit ``add_to_watch_requested`` for every decoded signal in an RX item.
-
-        Args:
-            item: RxItem whose decoded signal list should be broadcast.
-
-        Emits:
-            add_to_watch_requested: Once per signal with
-                ``(can_id, name, unit, "Rx")``.
-        """
-        for sig in item.signals:
+        for item, sig in self._rx_selected_signals():
             self.add_to_watch_requested.emit(item.can_id, sig.name, sig.unit, "Rx")
 
-    def _add_all_rx_to_plot(self, item):
-        """Emit ``add_to_plot_requested`` for every decoded signal in an RX item.
+    def _add_rx_to_plot(self):
+        """Add all uniquely-selected RX signals to Plot.
 
-        Args:
-            item: RxItem whose decoded signal list should be broadcast.
+        Applies the same recursive / deduplication logic as
+        :meth:`_add_rx_to_watch`.
 
         Emits:
-            add_to_plot_requested: Once per signal with ``(can_id, name, unit)``.
+            add_to_plot_requested: Once per unique signal with
+                ``(can_id, name, unit)``.
         """
-        for sig in item.signals:
+        for item, sig in self._rx_selected_signals():
+            self.add_to_plot_requested.emit(item.can_id, sig.name, sig.unit)
+
+    def _add_tx_to_watch(self):
+        """Add all uniquely-selected TX signals to Watch.
+
+        Selecting a message row recursively includes all its decoded signals.
+        No signal is emitted twice even when both parent and children are
+        selected simultaneously.
+
+        Emits:
+            add_to_watch_requested: Once per unique signal with
+                ``(can_id, name, unit, "Tx")``.
+        """
+        for item, sig in self._tx_selected_signals():
+            self.add_to_watch_requested.emit(item.can_id, sig.name, sig.unit, "Tx")
+
+    def _add_tx_to_plot(self):
+        """Add all uniquely-selected TX signals to Plot.
+
+        Applies the same recursive / deduplication logic as
+        :meth:`_add_tx_to_watch`.
+
+        Emits:
+            add_to_plot_requested: Once per unique signal with
+                ``(can_id, name, unit)``.
+        """
+        for item, sig in self._tx_selected_signals():
             self.add_to_plot_requested.emit(item.can_id, sig.name, sig.unit)
