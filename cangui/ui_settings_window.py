@@ -2,7 +2,7 @@
 
 from PySide6.QtCore import Qt, QAbstractItemModel, QModelIndex, Signal
 from PySide6.QtWidgets import (
-    QWidget, QStyledItemDelegate,
+    QWidget, QStyledItemDelegate, QLabel,
     QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox,
 )
 
@@ -488,6 +488,15 @@ class SettingsWindow(BaseDockWindow):
         """
         super().__init__(parent)
         self._options = options
+
+        info = QLabel(
+            "Changes apply immediately. Global defaults are saved to "
+            "~/.config/cangui/options.json. The active project stores "
+            "its own overrides, which take effect when the project is loaded."
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet("color: gray; font-style: italic;")
+        self._layout.addWidget(info)
 
         self._model = SettingsModel(options, self)
         self._model.setting_changed.connect(self.setting_changed)

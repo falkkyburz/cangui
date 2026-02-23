@@ -3,9 +3,9 @@
 Displays the most-recently-decoded value for each pinned CAN signal, backed
 by :class:`~cangui.model_watch.WatchModel`.
 """
-from PySide6.QtWidgets import QHeaderView, QTreeView, QToolBar
+from PySide6.QtWidgets import QHeaderView, QTreeView, QToolBar, QMenu, QAbstractItemView
 from PySide6.QtGui import QAction
-from PySide6.QtCore import Signal, QTimer
+from PySide6.QtCore import Signal, QTimer, Qt
 
 from cangui.model_watch import WatchModel
 from cangui.ui_base_dock_window import BaseDockWindow
@@ -42,9 +42,9 @@ class WatchWindow(BaseDockWindow):
         toolbar = QToolBar()
         toolbar.setMovable(False)
 
-        remove_action = QAction(_icon("remove"), "Remove", self)
-        remove_action.triggered.connect(self._on_remove)
-        toolbar.addAction(remove_action)
+        self._remove_action = QAction(_icon("remove"), "Remove", self)
+        self._remove_action.triggered.connect(self._on_remove)
+        toolbar.addAction(self._remove_action)
 
         clear_action = QAction(_icon("trash"), "Clear All", self)
         clear_action.triggered.connect(self._model.clear)
@@ -52,19 +52,19 @@ class WatchWindow(BaseDockWindow):
 
         toolbar.addSeparator()
 
-        up_action = QAction(_icon("up"), "Move Up", self)
-        up_action.triggered.connect(self._on_move_up)
-        toolbar.addAction(up_action)
+        self._up_action = QAction(_icon("up"), "Move Up", self)
+        self._up_action.triggered.connect(self._on_move_up)
+        toolbar.addAction(self._up_action)
 
-        down_action = QAction(_icon("down"), "Move Down", self)
-        down_action.triggered.connect(self._on_move_down)
-        toolbar.addAction(down_action)
+        self._down_action = QAction(_icon("down"), "Move Down", self)
+        self._down_action.triggered.connect(self._on_move_down)
+        toolbar.addAction(self._down_action)
 
         toolbar.addSeparator()
 
-        add_to_plot_action = QAction(_icon("plot"), "Add to Plot", self)
-        add_to_plot_action.triggered.connect(self._on_add_to_plot)
-        toolbar.addAction(add_to_plot_action)
+        self._add_to_plot_action = QAction(_icon("plot"), "Add to Plot", self)
+        self._add_to_plot_action.triggered.connect(self._on_add_to_plot)
+        toolbar.addAction(self._add_to_plot_action)
 
         self._layout.addWidget(toolbar)
 
@@ -76,6 +76,14 @@ class WatchWindow(BaseDockWindow):
         self._view.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._view.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
         self._view.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
+        self._view.setDragEnabled(True)
+        self._view.setAcceptDrops(True)
+        self._view.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self._view.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self._view.setDragDropOverwriteMode(False)
+        self._view.setDropIndicatorShown(True)
+        self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._view.customContextMenuRequested.connect(self._on_context_menu)
         self._layout.addWidget(self._view)
 
         self._model.rowsInserted.connect(lambda *_: self._resize_columns())
@@ -123,6 +131,22 @@ class WatchWindow(BaseDockWindow):
         """Resize all columns except the last to fit their contents."""
         for i in range(self._model.columnCount() - 1):
             self._view.resizeColumnToContents(i)
+
+    def _on_context_menu(self, pos):
+        """Show a context menu at the given viewport position."""
+        has_sel = self._view.selectionModel().hasSelection()
+        self._remove_action.setEnabled(has_sel)
+        self._up_action.setEnabled(has_sel)
+        self._down_action.setEnabled(has_sel)
+        self._add_to_plot_action.setEnabled(has_sel)
+        menu = QMenu(self)
+        menu.addAction(self._remove_action)
+        menu.addSeparator()
+        menu.addAction(self._up_action)
+        menu.addAction(self._down_action)
+        menu.addSeparator()
+        menu.addAction(self._add_to_plot_action)
+        menu.exec(self._view.viewport().mapToGlobal(pos))
 
     def _on_add_to_plot(self):
         """Emit :attr:`add_to_plot_requested` for every selected signal."""

@@ -5,7 +5,7 @@ before they reach the RX model and trace.  Backed by
 :class:`~cangui.model_rx_filter.RxFilterModel`.
 """
 from PySide6.QtWidgets import (
-    QHeaderView, QToolBar, QComboBox, QStyledItemDelegate,
+    QHeaderView, QToolBar, QComboBox, QStyledItemDelegate, QMenu, QAbstractItemView,
 )
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt, QTimer
@@ -61,27 +61,31 @@ class RxFilterWindow(BaseDockWindow):
         toolbar = QToolBar()
         toolbar.setMovable(False)
 
-        add_pass_action = QAction(_icon("pass"), "Add Pass", self)
-        add_pass_action.triggered.connect(lambda: self._model.add_rule(FilterAction.PASS))
-        toolbar.addAction(add_pass_action)
+        self._add_pass_action = QAction(_icon("pass"), "Add Pass", self)
+        self._add_pass_action.triggered.connect(lambda: self._model.add_rule(FilterAction.PASS))
+        toolbar.addAction(self._add_pass_action)
 
-        add_drop_action = QAction(_icon("drop"), "Add Drop", self)
-        add_drop_action.triggered.connect(lambda: self._model.add_rule(FilterAction.DROP))
-        toolbar.addAction(add_drop_action)
+        self._add_drop_action = QAction(_icon("drop"), "Add Drop", self)
+        self._add_drop_action.triggered.connect(lambda: self._model.add_rule(FilterAction.DROP))
+        toolbar.addAction(self._add_drop_action)
 
-        remove_action = QAction(_icon("remove"), "Remove", self)
-        remove_action.triggered.connect(self._on_remove)
-        toolbar.addAction(remove_action)
+        self._remove_action = QAction(_icon("remove"), "Remove", self)
+        self._remove_action.triggered.connect(self._on_remove)
+        toolbar.addAction(self._remove_action)
 
         toolbar.addSeparator()
 
-        up_action = QAction(_icon("up"), "Up", self)
-        up_action.triggered.connect(self._on_move_up)
-        toolbar.addAction(up_action)
+        self._up_action = QAction(_icon("up"), "Move Up", self)
+        self._up_action.triggered.connect(self._on_move_up)
+        toolbar.addAction(self._up_action)
 
-        down_action = QAction(_icon("down"), "Down", self)
-        down_action.triggered.connect(self._on_move_down)
-        toolbar.addAction(down_action)
+        self._down_action = QAction(_icon("down"), "Move Down", self)
+        self._down_action.triggered.connect(self._on_move_down)
+        toolbar.addAction(self._down_action)
+
+        self._clear_action = QAction(_icon("trash"), "Clear All", self)
+        self._clear_action.triggered.connect(self._on_clear_all)
+        toolbar.addAction(self._clear_action)
 
         self._layout.addWidget(toolbar)
 
@@ -96,6 +100,14 @@ class RxFilterWindow(BaseDockWindow):
             QHeaderView.ResizeMode.Interactive
         )
         self._view.setItemDelegateForColumn(1, ActionDelegate(self._view))
+        self._view.setDragEnabled(True)
+        self._view.setAcceptDrops(True)
+        self._view.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self._view.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self._view.setDragDropOverwriteMode(False)
+        self._view.setDropIndicatorShown(True)
+        self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._view.customContextMenuRequested.connect(self._on_context_menu)
         self._layout.addWidget(self._view)
 
         self._model.rowsInserted.connect(lambda *_: self._resize_columns())
@@ -141,3 +153,25 @@ class RxFilterWindow(BaseDockWindow):
             self._model.move_down(index.row())
             new_row = min(self._model.rowCount() - 1, index.row() + 1)
             self._view.setCurrentIndex(self._model.index(new_row, index.column()))
+
+    def _on_clear_all(self):
+        """Remove all filter rules from the model."""
+        self._model.clear()
+
+    def _on_context_menu(self, pos):
+        """Show a context menu for the filter table at the given position."""
+        has_sel = self._view.selectionModel().hasSelection()
+        self._remove_action.setEnabled(has_sel)
+        self._up_action.setEnabled(has_sel)
+        self._down_action.setEnabled(has_sel)
+        menu = QMenu(self)
+        menu.addAction(self._add_pass_action)
+        menu.addAction(self._add_drop_action)
+        menu.addSeparator()
+        menu.addAction(self._remove_action)
+        menu.addSeparator()
+        menu.addAction(self._up_action)
+        menu.addAction(self._down_action)
+        menu.addSeparator()
+        menu.addAction(self._clear_action)
+        menu.exec(self._view.viewport().mapToGlobal(pos))

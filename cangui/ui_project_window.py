@@ -3,9 +3,11 @@
 Shows the project tree (databases, traces, plugins) and exposes toolbar
 actions for creating, loading, saving, and importing project files.
 """
-from PySide6.QtWidgets import QApplication, QTreeView, QToolBar, QHeaderView, QFileDialog
+from pathlib import Path
+
+from PySide6.QtWidgets import QApplication, QTreeView, QToolBar, QHeaderView, QFileDialog, QMenu
 from PySide6.QtGui import QAction
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt
 
 from cangui.model_project import ProjectModel
 from cangui.ui_base_dock_window import BaseDockWindow
@@ -39,6 +41,7 @@ class ProjectWindow(BaseDockWindow):
     save_as_requested = Signal()
     file_remove_requested = Signal(str, str)  # (path, category)
     import_file_requested = Signal(str)  # path
+    open_in_database_requested = Signal(str)  # absolute file path
 
     def __init__(self, model: ProjectModel, parent=None):
         """Build the Project Manager panel with its toolbar and tree view.
@@ -92,6 +95,14 @@ class ProjectWindow(BaseDockWindow):
         copy_path_action.triggered.connect(self._copy_path)
         toolbar.addAction(copy_path_action)
 
+        toolbar.addSeparator()
+
+        self._open_db_action = QAction(_icon("database"), "Open in Database", self)
+        self._open_db_action.setToolTip("Open selected database file in the Database editor tab")
+        self._open_db_action.setEnabled(False)
+        self._open_db_action.triggered.connect(self._on_open_in_database)
+        toolbar.addAction(self._open_db_action)
+
         self._layout.addWidget(toolbar)
 
         self._view = QTreeView()
@@ -107,7 +118,46 @@ class ProjectWindow(BaseDockWindow):
 
         self._view.expandAll()
         self._view.collapsed.connect(self._prevent_collapse)
+        self._view.selectionModel().currentChanged.connect(self._on_selection_changed)
+        self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._view.customContextMenuRequested.connect(self._on_context_menu)
         self._layout.addWidget(self._view)
+
+    def _is_db_leaf(self, node) -> bool:
+        """Return True if the node is a DBC/KCD database leaf file."""
+        if node is None or not node.path or node.category != "db":
+            return False
+        return Path(node.path).suffix.lower() in (".dbc", ".kcd")
+
+    def _on_selection_changed(self, current, _previous):
+        """Enable/disable the Open in Database action based on the current node."""
+        node = self._model.get_node(current)
+        self._open_db_action.setEnabled(self._is_db_leaf(node))
+
+    def _on_open_in_database(self):
+        """Emit open_in_database_requested for the currently selected database file."""
+        idx = self._view.currentIndex()
+        node = self._model.get_node(idx)
+        if self._is_db_leaf(node):
+            self.open_in_database_requested.emit(node.path)
+
+    def _on_context_menu(self, pos):
+        """Show a context menu for the project tree at the given position."""
+        idx = self._view.indexAt(pos)
+        node = self._model.get_node(idx) if idx.isValid() else None
+        is_file = node is not None and bool(node.path)
+        is_db_leaf = self._is_db_leaf(node)
+        menu = QMenu(self)
+        menu.addAction(_icon("import"), "Import File").triggered.connect(self._browse_import)
+        if is_file:
+            menu.addSeparator()
+            menu.addAction(_icon("trash"), "Remove File").triggered.connect(self._remove_selected)
+            menu.addAction(_icon("copy"), "Copy Path").triggered.connect(self._copy_path)
+        if is_db_leaf:
+            menu.addSeparator()
+            menu.addAction(_icon("database"), "Open in Database Editor").triggered.connect(
+                self._on_open_in_database)
+        menu.exec(self._view.viewport().mapToGlobal(pos))
 
     def _prevent_collapse(self, index):
         """Re-expand top-level category nodes so they cannot be collapsed."""

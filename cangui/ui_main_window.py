@@ -284,6 +284,7 @@ class MainWindow(QMainWindow):
         self._project_win.save_as_requested.connect(self._save_project_as)
         self._project_win.file_remove_requested.connect(self._remove_project_file)
         self._project_win.import_file_requested.connect(self._on_import_file)
+        self._project_win.open_in_database_requested.connect(self._on_open_in_database)
 
         self._watch_win = WatchWindow(self._watch_model)
         self._watch_win.add_to_plot_requested.connect(self._add_signal_to_plot)
@@ -1083,6 +1084,17 @@ class MainWindow(QMainWindow):
         self._plot_list_win.add_signal(arb_id, signal_name, unit)
 
     # -- Script / Seed-Key plugins --
+
+    def _on_open_in_database(self, path: str):
+        """Switch to the Database tab when the user opens a file from the Project view.
+
+        Args:
+            path: Absolute path to the database file to show.
+        """
+        self._main_tabs.setCurrentWidget(self._database_win)
+        view = getattr(self._database_win, "primary_view", None)
+        if view is not None:
+            view.setFocus()
 
     def _on_import_file(self, path: str):
         """Dispatch a Project-view import by file extension."""

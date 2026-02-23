@@ -1,6 +1,7 @@
 """Qt item model for displaying received CAN messages in a tree-table view.
 
 The model uses a two-level tree structure:
+
 - Root (top-level) rows represent unique CAN messages, keyed by (bus, arb_id).
 - Child rows beneath each message show the decoded signal values extracted
   from the message payload via the signal decoder.
@@ -365,6 +366,14 @@ class RxMessageModel(QAbstractItemModel):
             if self._is_top_level(index) and col == 2 and 0 <= index.row() < len(self._items):
                 item = self._items[index.row()]
                 return Qt.CheckState.Checked if item.is_extended_id else Qt.CheckState.Unchecked
+            return None
+
+        if role == Qt.ItemDataRole.ToolTipRole:
+            if not index.parent().isValid() and 0 <= index.row() < len(self._items):
+                item = self._items[index.row()]
+                elapsed = time.monotonic() - item.last_seen_monotonic
+                if elapsed > STALE_TIMEOUT_S:
+                    return f"Last seen {elapsed:.1f} s ago"
             return None
 
         if role != Qt.ItemDataRole.DisplayRole:

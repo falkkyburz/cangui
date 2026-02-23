@@ -5,7 +5,7 @@ import cantools
 
 from PySide6.QtCore import Qt, Signal, QModelIndex, QTimer, QSortFilterProxyModel
 from PySide6.QtWidgets import (
-    QWidget, QToolBar, QHeaderView,
+    QWidget, QToolBar, QHeaderView, QMenu,
     QFileDialog, QMessageBox, QStyledItemDelegate, QComboBox,
 )
 from PySide6.QtGui import QAction
@@ -151,27 +151,27 @@ class DatabaseWindow(BaseDockWindow):
         add_db.triggered.connect(self._on_add_database)
         toolbar.addAction(add_db)
 
-        add_msg = QAction(_icon("message"), "Add Message", self)
-        add_msg.triggered.connect(self._on_add_message)
-        toolbar.addAction(add_msg)
+        self._add_msg_action = QAction(_icon("message"), "Add Message", self)
+        self._add_msg_action.triggered.connect(self._on_add_message)
+        toolbar.addAction(self._add_msg_action)
 
-        add_sig = QAction(_icon("signal"), "Add Signal", self)
-        add_sig.triggered.connect(self._on_add_signal)
-        toolbar.addAction(add_sig)
+        self._add_sig_action = QAction(_icon("signal"), "Add Signal", self)
+        self._add_sig_action.triggered.connect(self._on_add_signal)
+        toolbar.addAction(self._add_sig_action)
 
-        remove = QAction(_icon("trash"), "Remove Selected", self)
-        remove.triggered.connect(self._on_remove_selected)
-        toolbar.addAction(remove)
+        self._remove_action = QAction(_icon("trash"), "Remove Selected", self)
+        self._remove_action.triggered.connect(self._on_remove_selected)
+        toolbar.addAction(self._remove_action)
 
         toolbar.addSeparator()
 
-        up_action = QAction(_icon("up"), "Move Up", self)
-        up_action.triggered.connect(self._on_move_up)
-        toolbar.addAction(up_action)
+        self._up_action = QAction(_icon("up"), "Move Up", self)
+        self._up_action.triggered.connect(self._on_move_up)
+        toolbar.addAction(self._up_action)
 
-        down_action = QAction(_icon("down"), "Move Down", self)
-        down_action.triggered.connect(self._on_move_down)
-        toolbar.addAction(down_action)
+        self._down_action = QAction(_icon("down"), "Move Down", self)
+        self._down_action.triggered.connect(self._on_move_down)
+        toolbar.addAction(self._down_action)
 
         toolbar.addSeparator()
 
@@ -195,18 +195,18 @@ class DatabaseWindow(BaseDockWindow):
 
         toolbar.addSeparator()
 
-        add_watch = QAction(_icon("watch"), "Add to Watch", self)
-        add_watch.triggered.connect(self._on_add_to_watch)
-        toolbar.addAction(add_watch)
+        self._add_watch_action = QAction(_icon("watch"), "Add to Watch", self)
+        self._add_watch_action.triggered.connect(self._on_add_to_watch)
+        toolbar.addAction(self._add_watch_action)
 
-        add_plot = QAction(_icon("plot"), "Add to Plot", self)
-        add_plot.triggered.connect(self._on_add_to_plot)
-        toolbar.addAction(add_plot)
+        self._add_plot_action = QAction(_icon("plot"), "Add to Plot", self)
+        self._add_plot_action.triggered.connect(self._on_add_to_plot)
+        toolbar.addAction(self._add_plot_action)
 
-        add_tx = QAction(_icon("send"), "Add to TX", self)
-        add_tx.setToolTip("Add selected message to the TX list")
-        add_tx.triggered.connect(self._on_add_to_tx)
-        toolbar.addAction(add_tx)
+        self._add_tx_action = QAction(_icon("send"), "Add to TX", self)
+        self._add_tx_action.setToolTip("Add selected message to the TX list")
+        self._add_tx_action.triggered.connect(self._on_add_to_tx)
+        toolbar.addAction(self._add_tx_action)
 
         self._layout.addWidget(toolbar)
 
@@ -233,6 +233,8 @@ class DatabaseWindow(BaseDockWindow):
         header.setStretchLastSection(True)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
 
+        self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._tree.customContextMenuRequested.connect(self._on_context_menu)
         self._layout.addWidget(self._tree)
         QTimer.singleShot(0, self._resize_columns)
 
@@ -251,6 +253,28 @@ class DatabaseWindow(BaseDockWindow):
     def primary_view(self):
         """The database tree view that receives keyboard focus."""
         return self._tree
+
+    def _on_context_menu(self, pos):
+        """Show a context menu for the database tree at the given position."""
+        has_sel = self._tree.selectionModel().hasSelection()
+        self._remove_action.setEnabled(has_sel)
+        self._up_action.setEnabled(has_sel)
+        self._down_action.setEnabled(has_sel)
+        self._add_watch_action.setEnabled(has_sel)
+        self._add_plot_action.setEnabled(has_sel)
+        self._add_tx_action.setEnabled(has_sel)
+        menu = QMenu(self)
+        menu.addAction(self._add_msg_action)
+        menu.addAction(self._add_sig_action)
+        menu.addAction(self._remove_action)
+        menu.addSeparator()
+        menu.addAction(self._up_action)
+        menu.addAction(self._down_action)
+        menu.addSeparator()
+        menu.addAction(self._add_watch_action)
+        menu.addAction(self._add_plot_action)
+        menu.addAction(self._add_tx_action)
+        menu.exec(self._tree.viewport().mapToGlobal(pos))
 
     # -- Proxy helpers --
 

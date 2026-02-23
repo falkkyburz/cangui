@@ -17,7 +17,7 @@ redraws the parent row's hex data column so the two views stay in sync.
 
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import Qt, QAbstractItemModel, QModelIndex, QTimer
+from PySide6.QtCore import Qt, QAbstractItemModel, QModelIndex, QTimer, QByteArray, QMimeData
 
 from cangui.signal_decoder import SignalDecoder
 
@@ -88,6 +88,8 @@ class TxMessageItem:
 
 COLUMNS = ["Bus", "ID (hex)", "Ext", "Type", "Length", "Symbol",
            "Data (hex)", "Cycle Time", "Count", "Trigger", "Creator"]
+
+_DRAG_MIME = "application/x-cangui-rows"
 
 
 def _mux_prefix(sig: TxSignalItem) -> str:
@@ -328,12 +330,53 @@ class TxMessageModel(QAbstractItemModel):
                 flags |= Qt.ItemFlag.ItemIsUserCheckable
             if index.column() in (0, 1, 4, 5, 6, 7):
                 flags |= Qt.ItemFlag.ItemIsEditable
+            flags |= Qt.ItemFlag.ItemIsDragEnabled
         else:
-            # Signal child rows: data column (6) is editable
+            # Signal child rows: data column (6) is editable; not draggable
             if index.column() == 6:
                 flags |= Qt.ItemFlag.ItemIsEditable
 
+        flags |= Qt.ItemFlag.ItemIsDropEnabled
         return flags
+
+    def supportedDropActions(self):
+        """Return MoveAction as the only supported drop action."""
+        return Qt.DropAction.MoveAction
+
+    def mimeTypes(self):
+        """Return the list of MIME types supported for drag operations."""
+        return [_DRAG_MIME]
+
+    def mimeData(self, indexes):
+        """Encode top-level message row indices into MIME data."""
+        mime = QMimeData()
+        rows = sorted({idx.row() for idx in indexes
+                       if idx.isValid() and self._is_top_level(idx)})
+        mime.setData(_DRAG_MIME, QByteArray(b",".join(str(r).encode() for r in rows)))
+        return mime
+
+    def dropMimeData(self, data, action, row, col, parent):
+        """Handle a drop event by reordering top-level message rows."""
+        if not data.hasFormat(_DRAG_MIME):
+            return False
+        raw = bytes(data.data(_DRAG_MIME))
+        if not raw:
+            return False
+        src_rows = [int(r) for r in raw.split(b",") if r]
+        dest = row if row >= 0 else len(self._items)
+        self.beginResetModel()
+        offset = 0
+        for src in sorted(src_rows):
+            effective_src = src - offset
+            effective_dest = dest - offset if dest > src else dest
+            if effective_src == effective_dest:
+                continue
+            item = self._items.pop(effective_src)
+            self._items.insert(effective_dest, item)
+            if dest > src:
+                offset += 1
+        self.endResetModel()
+        return True
 
     def setData(self, index: QModelIndex, value, role=Qt.ItemDataRole.EditRole):
         """Dispatch a write to the appropriate top-level or signal handler.

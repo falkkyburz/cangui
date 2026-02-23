@@ -2,9 +2,9 @@
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QTimer, Signal
+from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QTimer, Signal, QByteArray, QMimeData
 from PySide6.QtWidgets import (
-    QWidget, QHBoxLayout, QToolBar,
+    QWidget, QHBoxLayout, QToolBar, QMenu, QAbstractItemView,
     QTableView, QHeaderView, QLineEdit, QPushButton,
     QLabel, QSpinBox,
 )
@@ -38,6 +38,8 @@ class DidWatchEntry:
 
 
 COLUMNS = ["DID", "Name", "Value", "Raw", "Cycle (ms)", "Status"]
+
+_DRAG_MIME = "application/x-cangui-rows"
 
 
 class DidWatchModel(QAbstractTableModel):
@@ -107,7 +109,46 @@ class DidWatchModel(QAbstractTableModel):
         Args:
             index: Model index to query.
         """
-        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        if index.isValid():
+            flags |= Qt.ItemFlag.ItemIsDragEnabled
+        flags |= Qt.ItemFlag.ItemIsDropEnabled
+        return flags
+
+    def supportedDropActions(self):
+        """Return MoveAction as the only supported drop action."""
+        return Qt.DropAction.MoveAction
+
+    def mimeTypes(self):
+        """Return the list of MIME types supported for drag operations."""
+        return [_DRAG_MIME]
+
+    def mimeData(self, indexes):
+        """Encode selected row indices into MIME data."""
+        mime = QMimeData()
+        rows = sorted({idx.row() for idx in indexes if idx.isValid()})
+        mime.setData(_DRAG_MIME, QByteArray(b",".join(str(r).encode() for r in rows)))
+        return mime
+
+    def dropMimeData(self, data, action, row, col, parent):
+        """Handle a drop event by reordering entries."""
+        if not data.hasFormat(_DRAG_MIME):
+            return False
+        src_rows = [int(r) for r in bytes(data.data(_DRAG_MIME)).split(b",")]
+        dest = row if row >= 0 else self.rowCount()
+        self.beginResetModel()
+        offset = 0
+        for src in sorted(src_rows):
+            effective_src = src - offset
+            effective_dest = dest - offset if dest > src else dest
+            if effective_src == effective_dest:
+                continue
+            item = self._entries.pop(effective_src)
+            self._entries.insert(effective_dest, item)
+            if dest > src:
+                offset += 1
+        self.endResetModel()
+        return True
 
     def add_entry(self, did: int, name: str = "", cycle_ms: int = 500):
         """Append a new DID entry if it does not already exist in the table.
@@ -245,9 +286,9 @@ class WatchDidWindow(BaseDockWindow):
 
         toolbar.addSeparator()
 
-        remove_action = QAction(_icon("remove"), "Remove", self)
-        remove_action.triggered.connect(self._on_remove)
-        toolbar.addAction(remove_action)
+        self._remove_action = QAction(_icon("remove"), "Remove", self)
+        self._remove_action.triggered.connect(self._on_remove)
+        toolbar.addAction(self._remove_action)
 
         clear_action = QAction(_icon("trash"), "Clear All", self)
         clear_action.triggered.connect(self._on_clear)
@@ -255,19 +296,19 @@ class WatchDidWindow(BaseDockWindow):
 
         toolbar.addSeparator()
 
-        up_action = QAction(_icon("up"), "Move Up", self)
-        up_action.triggered.connect(self._on_move_up)
-        toolbar.addAction(up_action)
+        self._up_action = QAction(_icon("up"), "Move Up", self)
+        self._up_action.triggered.connect(self._on_move_up)
+        toolbar.addAction(self._up_action)
 
-        down_action = QAction(_icon("down"), "Move Down", self)
-        down_action.triggered.connect(self._on_move_down)
-        toolbar.addAction(down_action)
+        self._down_action = QAction(_icon("down"), "Move Down", self)
+        self._down_action.triggered.connect(self._on_move_down)
+        toolbar.addAction(self._down_action)
 
         toolbar.addSeparator()
 
-        add_to_plot_action = QAction(_icon("plot"), "Add to Plot", self)
-        add_to_plot_action.triggered.connect(self._on_add_to_plot)
-        toolbar.addAction(add_to_plot_action)
+        self._add_to_plot_action = QAction(_icon("plot"), "Add to Plot", self)
+        self._add_to_plot_action.triggered.connect(self._on_add_to_plot)
+        toolbar.addAction(self._add_to_plot_action)
 
         self._layout.addWidget(toolbar)
 
@@ -275,7 +316,10 @@ class WatchDidWindow(BaseDockWindow):
         add_layout = QHBoxLayout()
         add_layout.setContentsMargins(4, 2, 4, 2)
         add_layout.addWidget(QLabel("DID (hex):"))
-        self._did_edit = QLineEdit("F190")
+        self._did_edit = QLineEdit()
+        self._did_edit.setPlaceholderText("e.g. F190")
+        self._did_edit.setToolTip("Enter the Data Identifier in hexadecimal (e.g. F190 for 0xF190)")
+        self._did_edit.setMaxLength(4)
         self._did_edit.setMaximumWidth(80)
         add_layout.addWidget(self._did_edit)
 
@@ -311,6 +355,14 @@ class WatchDidWindow(BaseDockWindow):
         self._table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Interactive
         )
+        self._table.setDragEnabled(True)
+        self._table.setAcceptDrops(True)
+        self._table.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self._table.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self._table.setDragDropOverwriteMode(False)
+        self._table.setDropIndicatorShown(True)
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._on_context_menu)
         self._layout.addWidget(self._table)
 
         self._model.rowsInserted.connect(lambda *_: self._resize_columns())
@@ -423,6 +475,22 @@ class WatchDidWindow(BaseDockWindow):
             if row < len(self._model.entries):
                 entry = self._model.entries[row]
                 self.add_to_plot_requested.emit(entry.did, entry.name, "")
+
+    def _on_context_menu(self, pos):
+        """Show a context menu for the DID table at the given position."""
+        has_sel = self._table.selectionModel().hasSelection()
+        self._remove_action.setEnabled(has_sel)
+        self._up_action.setEnabled(has_sel)
+        self._down_action.setEnabled(has_sel)
+        self._add_to_plot_action.setEnabled(has_sel)
+        menu = QMenu(self)
+        menu.addAction(self._remove_action)
+        menu.addSeparator()
+        menu.addAction(self._up_action)
+        menu.addAction(self._down_action)
+        menu.addSeparator()
+        menu.addAction(self._add_to_plot_action)
+        menu.exec(self._table.viewport().mapToGlobal(pos))
 
     def _on_response(self, resp: UdsResponse):
         """Handle an incoming UDS response and update the matching DID row.

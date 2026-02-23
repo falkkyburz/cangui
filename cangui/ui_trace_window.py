@@ -9,7 +9,8 @@ messages by CAN ID or text.
 from PySide6.QtCore import Qt, Signal, QSortFilterProxyModel
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QToolBar, QTableView,
-    QFileDialog, QComboBox, QLabel, QLineEdit, QHeaderView,
+    QFileDialog, QDoubleSpinBox, QLabel, QLineEdit, QHeaderView, QToolButton, QMenu,
+    QApplication,
 )
 from PySide6.QtGui import QAction
 
@@ -94,6 +95,10 @@ class TraceWindow(BaseDockWindow):
     replay-speed selection, and a live text filter.  A status bar shows the
     running message count, the current message rate, and the recording state.
 
+    .. attribute:: _STATE_STYLE
+
+        Mapping from state name to QSS style string used by :meth:`_set_state`.
+
     Signals:
         load_trace_requested: Emitted with the chosen file path when the user
             selects a trace file to load.
@@ -102,6 +107,13 @@ class TraceWindow(BaseDockWindow):
         start_recording_requested: Emitted when the Start toolbar button is
             activated.
     """
+
+    _STATE_STYLE: dict[str, str] = {
+        "Stopped":   "color: gray;",
+        "Recording": "color: #CC0000; font-weight: bold;",
+        "Paused":    "color: #CC7700;",
+        "Replaying": "color: #006699;",
+    }
 
     TITLE = "Trace"
 
@@ -166,10 +178,22 @@ class TraceWindow(BaseDockWindow):
 
         # Speed selector for replay
         toolbar.addWidget(QLabel(" Speed: "))
-        self._speed_combo = QComboBox()
-        self._speed_combo.addItems(["0.5x", "1x", "2x", "10x", "Max"])
-        self._speed_combo.setCurrentIndex(1)
-        toolbar.addWidget(self._speed_combo)
+        self._speed_spin = QDoubleSpinBox()
+        self._speed_spin.setRange(0.1, 100.0)
+        self._speed_spin.setSingleStep(0.5)
+        self._speed_spin.setDecimals(1)
+        self._speed_spin.setValue(1.0)
+        self._speed_spin.setSuffix("x")
+        self._speed_spin.setFixedWidth(72)
+        toolbar.addWidget(self._speed_spin)
+
+        self._max_speed_btn = QToolButton()
+        self._max_speed_btn.setText("Max")
+        self._max_speed_btn.setCheckable(True)
+        self._max_speed_btn.toggled.connect(
+            lambda on: self._speed_spin.setEnabled(not on)
+        )
+        toolbar.addWidget(self._max_speed_btn)
 
         toolbar.addSeparator()
 
@@ -204,6 +228,8 @@ class TraceWindow(BaseDockWindow):
         # Use fixed widths instead of ResizeToContents (which measures ALL rows)
         for col, width in enumerate([60, 80, 35, 70, 35, 45, 35, 200]):
             header.resizeSection(col, width)
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._on_context_menu)
         self._layout.addWidget(self._table)
 
         # Auto-scroll on new rows
@@ -221,11 +247,22 @@ class TraceWindow(BaseDockWindow):
         self._rate_label.setStyleSheet("color: gray;")
         self._status_layout.addWidget(self._rate_label)
         self._status_layout.addStretch()
-        self._state_label = QLabel("Stopped")
+        self._state_label = QLabel()
         self._status_layout.addWidget(self._state_label)
+        self._set_state("Stopped")
         self._layout.addLayout(self._status_layout)
 
         self._model.rate_updated.connect(self._on_rate_updated)
+
+    def _set_state(self, text: str) -> None:
+        """Update the state label text and apply the corresponding color style.
+
+        Args:
+            text: State name; one of ``"Stopped"``, ``"Recording"``,
+                ``"Paused"``, or ``"Replaying"``.
+        """
+        self._state_label.setText(text)
+        self._state_label.setStyleSheet(self._STATE_STYLE.get(text, ""))
 
     @property
     def primary_view(self):
@@ -238,19 +275,17 @@ class TraceWindow(BaseDockWindow):
 
     @property
     def speed_factor(self) -> float:
-        """Return the numeric replay speed multiplier selected in the toolbar.
+        """Return the numeric replay speed multiplier from the toolbar.
 
-        Maps the human-readable combo-box text (e.g. ``"2x"``, ``"Max"``) to a
-        floating-point multiplier.  ``"Max"`` returns ``1000.0`` as a
-        practically unlimited speed sentinel.
+        Returns ``1000.0`` when the Max button is checked (unlimited speed),
+        otherwise returns the spinbox value.
 
         Returns:
             Floating-point speed multiplier (e.g. ``0.5``, ``1.0``, ``1000.0``).
         """
-        text = self._speed_combo.currentText()
-        if text == "Max":
+        if self._max_speed_btn.isChecked():
             return 1000.0
-        return float(text.rstrip("x"))
+        return self._speed_spin.value()
 
     def _update_button_state(self, recording: bool):
         """Enable or disable the Start/Pause/Stop toolbar actions.
@@ -276,7 +311,7 @@ class TraceWindow(BaseDockWindow):
         self._model.pause()
         self._update_button_state(False)
         self._start_action.setEnabled(True)
-        self._state_label.setText("Paused")
+        self._set_state("Paused")
 
     def set_recording_state(self, recording: bool):
         """Update button states and status label without touching the model.
@@ -288,13 +323,13 @@ class TraceWindow(BaseDockWindow):
             recording: ``True`` if recording is now active, ``False`` if stopped.
         """
         self._update_button_state(recording)
-        self._state_label.setText("Recording" if recording else "Stopped")
+        self._set_state("Recording" if recording else "Stopped")
 
     def _on_stop(self):
         """Stop live recording and reset toolbar and status label."""
         self._model.stop()
         self._update_button_state(False)
-        self._state_label.setText("Stopped")
+        self._set_state("Stopped")
 
     def _on_clear(self):
         """Clear all trace entries from the model and reset the count label."""
@@ -376,6 +411,24 @@ class TraceWindow(BaseDockWindow):
         else:
             self._rate_label.setText("")
 
+    def _on_context_menu(self, pos):
+        """Show a context menu at pos with a Copy Row action."""
+        index = self._table.indexAt(pos)
+        if not index.isValid():
+            return
+        menu = QMenu(self)
+        copy_action = menu.addAction("Copy Row")
+        action = menu.exec(self._table.viewport().mapToGlobal(pos))
+        if action is copy_action:
+            model = self._table.model()
+            row = index.row()
+            parts = []
+            for col in range(model.columnCount()):
+                cell = model.index(row, col)
+                text = str(model.data(cell) or "")
+                parts.append(text)
+            QApplication.clipboard().setText("  ".join(parts))
+
     def set_replay_state(self, playing: bool):
         """Update the status label to reflect the current replay state.
 
@@ -384,6 +437,6 @@ class TraceWindow(BaseDockWindow):
                 when playback has stopped.
         """
         if playing:
-            self._state_label.setText("Replaying")
+            self._set_state("Replaying")
         else:
-            self._state_label.setText("Stopped")
+            self._set_state("Stopped")

@@ -48,6 +48,7 @@ napoleon_include_init_with_doc = True
 napoleon_include_private_with_doc = False
 napoleon_use_param = True
 napoleon_use_rtype = True
+napoleon_custom_sections = [("Signals", "params_style"), ("Emits", "params_style")]
 
 # -- MyST (Markdown support) ---------------------------------------------------
 
@@ -67,6 +68,8 @@ intersphinx_mapping = {
 
 html_theme = "furo"
 html_static_path = ["_static"]
+suppress_warnings = ["autodoc"]
+nitpick_ignore_regex = [("py:class", r"cantools\\..*")]
 
 # Furo theme options
 html_theme_options = {

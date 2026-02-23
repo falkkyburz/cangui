@@ -8,7 +8,7 @@ by high-frequency CAN traffic.
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QTimer
+from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QTimer, QByteArray, QMimeData
 
 from cangui.can_message import CanMessage
 from cangui.signal_decoder import SignalDecoder
@@ -41,6 +41,8 @@ class WatchEntry:
 
 
 COLUMNS = ["Name", "Value", "Direction", "Origin"]
+
+_DRAG_MIME = "application/x-cangui-rows"
 
 
 class WatchModel(QAbstractTableModel):
@@ -152,15 +154,73 @@ class WatchModel(QAbstractTableModel):
         return None
 
     def flags(self, index: QModelIndex):
-        """Return read-only item flags (enabled and selectable, not editable).
+        """Return item flags including drag-enabled for valid rows.
 
         Args:
-            index: Cell position (unused beyond validity check).
+            index: Cell position.
 
         Returns:
             Combined :class:`Qt.ItemFlag` value.
         """
-        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        f = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        if index.isValid():
+            f |= Qt.ItemFlag.ItemIsDragEnabled
+        f |= Qt.ItemFlag.ItemIsDropEnabled
+        return f
+
+    def supportedDropActions(self):
+        """Return MoveAction as the only supported drop action."""
+        return Qt.DropAction.MoveAction
+
+    def mimeTypes(self):
+        """Return the list of MIME types supported for drag operations."""
+        return [_DRAG_MIME]
+
+    def mimeData(self, indexes):
+        """Encode selected row indices into MIME data for drag operations.
+
+        Args:
+            indexes: List of selected model indexes.
+
+        Returns:
+            :class:`QMimeData` with encoded row indices.
+        """
+        mime = QMimeData()
+        rows = sorted({idx.row() for idx in indexes if idx.isValid()})
+        mime.setData(_DRAG_MIME, QByteArray(b",".join(str(r).encode() for r in rows)))
+        return mime
+
+    def dropMimeData(self, data, action, row, col, parent):
+        """Handle a drop event by reordering entries.
+
+        Args:
+            data: MIME data carrying the source row indices.
+            action: The drop action (must be MoveAction).
+            row: The destination row index (-1 means append).
+            col: Ignored.
+            parent: Ignored for flat table.
+
+        Returns:
+            True if the drop was handled, False otherwise.
+        """
+        if not data.hasFormat(_DRAG_MIME):
+            return False
+        src_rows = [int(r) for r in bytes(data.data(_DRAG_MIME)).split(b",")]
+        dest = row if row >= 0 else self.rowCount()
+        self.beginResetModel()
+        offset = 0
+        for src in sorted(src_rows):
+            effective_src = src - offset
+            effective_dest = dest - offset if dest > src else dest
+            if effective_src == effective_dest:
+                continue
+            item = self._entries.pop(effective_src)
+            self._entries.insert(effective_dest, item)
+            if dest > src:
+                offset += 1
+        self._rebuild_index()
+        self.endResetModel()
+        return True
 
     def add_watch(self, arb_id: int, signal_name: str, display_name: str = "",
                   unit: str = "", direction: str = "Rx"):

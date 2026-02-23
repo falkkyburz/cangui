@@ -11,7 +11,7 @@ PlotWindow can update its pyqtgraph curves without a full rebuild.
 from PySide6.QtCore import Qt, Signal, QModelIndex, QTimer
 from PySide6.QtWidgets import (
     QWidget, QToolBar, QTableView, QHeaderView,
-    QColorDialog, QSpinBox, QStyledItemDelegate,
+    QColorDialog, QSpinBox, QStyledItemDelegate, QMenu, QAbstractItemView,
 )
 from PySide6.QtGui import QAction, QColor
 
@@ -161,9 +161,9 @@ class PlotListWindow(BaseDockWindow):
         toolbar = QToolBar()
         toolbar.setMovable(False)
 
-        remove_action = QAction(_icon("remove"), "Remove Selected", self)
-        remove_action.triggered.connect(self._on_remove)
-        toolbar.addAction(remove_action)
+        self._remove_action = QAction(_icon("remove"), "Remove", self)
+        self._remove_action.triggered.connect(self._on_remove)
+        toolbar.addAction(self._remove_action)
 
         clear_action = QAction(_icon("trash"), "Clear All", self)
         clear_action.triggered.connect(self._on_clear_all)
@@ -171,13 +171,13 @@ class PlotListWindow(BaseDockWindow):
 
         toolbar.addSeparator()
 
-        up_action = QAction(_icon("up"), "Move Up", self)
-        up_action.triggered.connect(self._on_move_up)
-        toolbar.addAction(up_action)
+        self._up_action = QAction(_icon("up"), "Move Up", self)
+        self._up_action.triggered.connect(self._on_move_up)
+        toolbar.addAction(self._up_action)
 
-        down_action = QAction(_icon("down"), "Move Down", self)
-        down_action.triggered.connect(self._on_move_down)
-        toolbar.addAction(down_action)
+        self._down_action = QAction(_icon("down"), "Move Down", self)
+        self._down_action.triggered.connect(self._on_move_down)
+        toolbar.addAction(self._down_action)
 
         self._layout.addWidget(toolbar)
 
@@ -193,6 +193,14 @@ class PlotListWindow(BaseDockWindow):
         self._table.setItemDelegateForColumn(COL_COLOR, _ColorDelegate(self._table))
         self._table.setItemDelegateForColumn(COL_WIDTH, _WidthDelegate(self._table))
         self._table.doubleClicked.connect(self._on_double_click)
+        self._table.setDragEnabled(True)
+        self._table.setAcceptDrops(True)
+        self._table.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self._table.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self._table.setDragDropOverwriteMode(False)
+        self._table.setDropIndicatorShown(True)
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._on_context_menu)
         self._layout.addWidget(self._table)
 
         self._model.rowsInserted.connect(lambda *_: self._resize_columns())
@@ -252,6 +260,39 @@ class PlotListWindow(BaseDockWindow):
             color = QColorDialog.getColor(current, self, "Select Curve Color")
             if color.isValid():
                 self._model.setData(index, color.name(), Qt.ItemDataRole.EditRole)
+
+    def _on_context_menu(self, pos):
+        """Show a context menu at the given viewport position."""
+        has_sel = self._table.selectionModel().hasSelection()
+        self._remove_action.setEnabled(has_sel)
+        self._up_action.setEnabled(has_sel)
+        self._down_action.setEnabled(has_sel)
+        menu = QMenu(self)
+        menu.addAction(self._remove_action)
+        menu.addSeparator()
+        menu.addAction(self._up_action)
+        menu.addAction(self._down_action)
+        menu.addSeparator()
+        change_color_act = menu.addAction("Change Color…")
+        change_color_act.setEnabled(has_sel)
+        change_color_act.triggered.connect(
+            lambda: self._on_double_click(self._table.currentIndex().siblingAtColumn(COL_COLOR))
+        )
+        toggle_vis_act = menu.addAction("Toggle Visible")
+        toggle_vis_act.setEnabled(has_sel)
+        toggle_vis_act.triggered.connect(self._on_toggle_visible)
+        menu.exec(self._table.viewport().mapToGlobal(pos))
+
+    def _on_toggle_visible(self):
+        """Toggle the Visible flag for all selected rows."""
+        rows = {i.row() for i in self._table.selectionModel().selectedIndexes()}
+        for row in rows:
+            if row < len(self._model.entries):
+                entry = self._model.entries[row]
+                idx = self._model.index(row, 4)  # COL_VISIBLE
+                new_state = (Qt.CheckState.Unchecked if entry.visible
+                             else Qt.CheckState.Checked)
+                self._model.setData(idx, new_state.value, Qt.ItemDataRole.CheckStateRole)
 
     # -- Model change → signal_settings_changed --
 

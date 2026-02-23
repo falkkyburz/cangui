@@ -11,7 +11,7 @@ inclusion in project files.
 from dataclasses import dataclass, field
 from enum import Enum
 
-from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, Signal
+from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, Signal, QByteArray, QMimeData
 
 
 class FilterAction(Enum):
@@ -58,6 +58,8 @@ class RxFilterRule:
 
 
 COLUMNS = ["", "Action", "Name", "CAN-ID From", "CAN-ID To", "Bus"]
+
+_DRAG_MIME = "application/x-cangui-rows"
 
 
 class RxFilterModel(QAbstractTableModel):
@@ -182,7 +184,7 @@ class RxFilterModel(QAbstractTableModel):
         return None
 
     def flags(self, index: QModelIndex):
-        """Return item flags, making column 0 checkable and columns 1–5 editable.
+        """Return item flags including checkable col 0, editable cols 1-5, and drag support.
 
         Args:
             index: The model index whose flags are requested.
@@ -196,7 +198,64 @@ class RxFilterModel(QAbstractTableModel):
             flags |= Qt.ItemFlag.ItemIsUserCheckable
         if col in (1, 2, 3, 4, 5):
             flags |= Qt.ItemFlag.ItemIsEditable
+        if index.isValid():
+            flags |= Qt.ItemFlag.ItemIsDragEnabled
+        flags |= Qt.ItemFlag.ItemIsDropEnabled
         return flags
+
+    def supportedDropActions(self):
+        """Return MoveAction as the only supported drop action."""
+        return Qt.DropAction.MoveAction
+
+    def mimeTypes(self):
+        """Return the list of MIME types supported for drag operations."""
+        return [_DRAG_MIME]
+
+    def mimeData(self, indexes):
+        """Encode selected row indices into MIME data.
+
+        Args:
+            indexes: List of selected model indexes.
+
+        Returns:
+            :class:`QMimeData` with encoded row indices.
+        """
+        mime = QMimeData()
+        rows = sorted({idx.row() for idx in indexes if idx.isValid()})
+        mime.setData(_DRAG_MIME, QByteArray(b",".join(str(r).encode() for r in rows)))
+        return mime
+
+    def dropMimeData(self, data, action, row, col, parent):
+        """Handle a drop event by reordering rules.
+
+        Args:
+            data: MIME data carrying the source row indices.
+            action: The drop action.
+            row: The destination row index (-1 means append).
+            col: Ignored.
+            parent: Ignored for flat table.
+
+        Returns:
+            True if the drop was handled, False otherwise.
+        """
+        if not data.hasFormat(_DRAG_MIME):
+            return False
+        src_rows = [int(r) for r in bytes(data.data(_DRAG_MIME)).split(b",")]
+        dest = row if row >= 0 else self.rowCount()
+        self.beginResetModel()
+        offset = 0
+        for src in sorted(src_rows):
+            effective_src = src - offset
+            effective_dest = dest - offset if dest > src else dest
+            if effective_src == effective_dest:
+                continue
+            item = self._rules.pop(effective_src)
+            self._rules.insert(effective_dest, item)
+            if dest > src:
+                offset += 1
+        self.endResetModel()
+        self.filters_changed.emit()
+        return True
 
     def setData(self, index: QModelIndex, value, role=Qt.ItemDataRole.EditRole) -> bool:
         """Update a rule field from a delegate or check-state change.
@@ -378,6 +437,19 @@ class RxFilterModel(QAbstractTableModel):
             }
             for r in self._rules
         ]
+
+    def clear(self):
+        """Remove all filter rules and reset to empty state.
+
+        Emits:
+            filters_changed: After the model has been cleared.
+        """
+        if not self._rules:
+            return
+        self.beginResetModel()
+        self._rules.clear()
+        self.endResetModel()
+        self.filters_changed.emit()
 
     def from_dicts(self, data: list[dict]):
         """Replace all rules by deserialising a list of plain dicts.

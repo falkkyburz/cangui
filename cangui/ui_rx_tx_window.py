@@ -7,7 +7,7 @@ defined here as well.
 """
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QHeaderView, QTreeView, QSplitter,
-    QStyledItemDelegate, QToolBar, QLabel, QWidget, QVBoxLayout,
+    QStyledItemDelegate, QToolBar, QLabel, QWidget, QVBoxLayout, QMenu, QAbstractItemView,
 )
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt, Signal, QEvent, QObject, QSortFilterProxyModel
@@ -450,21 +450,21 @@ class RxTxWindow(BaseDockWindow):
         tx_toolbar.addWidget(tx_title)
         tx_toolbar.addSeparator()
 
-        add_tx_action = QAction(_icon("add"), "Add Frame", self)
-        add_tx_action.triggered.connect(self.add_tx_requested)
-        tx_toolbar.addAction(add_tx_action)
+        self._add_tx_action = QAction(_icon("add"), "Add Frame", self)
+        self._add_tx_action.triggered.connect(self.add_tx_requested)
+        tx_toolbar.addAction(self._add_tx_action)
 
-        remove_tx_action = QAction(_icon("remove"), "Remove", self)
-        remove_tx_action.triggered.connect(self._remove_tx)
-        tx_toolbar.addAction(remove_tx_action)
+        self._remove_tx_action = QAction(_icon("remove"), "Remove", self)
+        self._remove_tx_action.triggered.connect(self._remove_tx)
+        tx_toolbar.addAction(self._remove_tx_action)
 
-        duplicate_tx_action = QAction(_icon("copy"), "Duplicate", self)
-        duplicate_tx_action.triggered.connect(self._duplicate_tx)
-        tx_toolbar.addAction(duplicate_tx_action)
+        self._duplicate_tx_action = QAction(_icon("copy"), "Duplicate", self)
+        self._duplicate_tx_action.triggered.connect(self._duplicate_tx)
+        tx_toolbar.addAction(self._duplicate_tx_action)
 
-        send_once_action = QAction(_icon("send"), "Send Once", self)
-        send_once_action.triggered.connect(self._send_once)
-        tx_toolbar.addAction(send_once_action)
+        self._send_once_action = QAction(_icon("send"), "Send Once", self)
+        self._send_once_action.triggered.connect(self._send_once)
+        tx_toolbar.addAction(self._send_once_action)
 
         clear_counters_action = QAction(_icon("clear"), "Clear Counters", self)
         clear_counters_action.triggered.connect(self._clear_tx_counters)
@@ -472,23 +472,23 @@ class RxTxWindow(BaseDockWindow):
 
         tx_toolbar.addSeparator()
 
-        up_tx_action = QAction(_icon("up"), "Move Up", self)
-        up_tx_action.triggered.connect(self._move_tx_up)
-        tx_toolbar.addAction(up_tx_action)
+        self._up_tx_action = QAction(_icon("up"), "Move Up", self)
+        self._up_tx_action.triggered.connect(self._move_tx_up)
+        tx_toolbar.addAction(self._up_tx_action)
 
-        down_tx_action = QAction(_icon("down"), "Move Down", self)
-        down_tx_action.triggered.connect(self._move_tx_down)
-        tx_toolbar.addAction(down_tx_action)
+        self._down_tx_action = QAction(_icon("down"), "Move Down", self)
+        self._down_tx_action.triggered.connect(self._move_tx_down)
+        tx_toolbar.addAction(self._down_tx_action)
 
         tx_toolbar.addSeparator()
 
-        add_tx_watch_action = QAction(_icon("watch"), "Add to Watch", self)
-        add_tx_watch_action.triggered.connect(self._add_tx_to_watch)
-        tx_toolbar.addAction(add_tx_watch_action)
+        self._add_tx_watch_action = QAction(_icon("watch"), "Add to Watch", self)
+        self._add_tx_watch_action.triggered.connect(self._add_tx_to_watch)
+        tx_toolbar.addAction(self._add_tx_watch_action)
 
-        add_tx_plot_action = QAction(_icon("plot"), "Add to Plot", self)
-        add_tx_plot_action.triggered.connect(self._add_tx_to_plot)
-        tx_toolbar.addAction(add_tx_plot_action)
+        self._add_tx_plot_action = QAction(_icon("plot"), "Add to Plot", self)
+        self._add_tx_plot_action.triggered.connect(self._add_tx_to_plot)
+        tx_toolbar.addAction(self._add_tx_plot_action)
 
         tx_layout.addWidget(tx_toolbar)
 
@@ -506,6 +506,14 @@ class RxTxWindow(BaseDockWindow):
         self._tx_view.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
         self._tx_view.setItemDelegateForColumn(5, SymbolDelegate(self._tx_view))
         self._tx_view.setItemDelegateForColumn(6, TxSignalValueDelegate(self._tx_view))
+        self._tx_view.setDragEnabled(True)
+        self._tx_view.setAcceptDrops(True)
+        self._tx_view.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self._tx_view.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self._tx_view.setDragDropOverwriteMode(False)
+        self._tx_view.setDropIndicatorShown(True)
+        self._tx_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._tx_view.customContextMenuRequested.connect(self._tx_context_menu)
         self._set_default_widths(self._tx_view)
         tx_layout.addWidget(self._tx_view)
         self._splitter.addWidget(tx_container)
@@ -524,17 +532,17 @@ class RxTxWindow(BaseDockWindow):
         conn_toolbar.addWidget(conn_title)
         conn_toolbar.addSeparator()
 
-        add_conn_action = QAction(_icon("add"), "Add", self)
-        add_conn_action.triggered.connect(self.add_connection_requested)
-        conn_toolbar.addAction(add_conn_action)
+        self._add_conn_action = QAction(_icon("add"), "Add", self)
+        self._add_conn_action.triggered.connect(self.add_connection_requested)
+        conn_toolbar.addAction(self._add_conn_action)
 
-        remove_conn_action = QAction(_icon("remove"), "Remove", self)
-        remove_conn_action.triggered.connect(self._remove_connection)
-        conn_toolbar.addAction(remove_conn_action)
+        self._remove_conn_action = QAction(_icon("remove"), "Remove", self)
+        self._remove_conn_action.triggered.connect(self._remove_connection)
+        conn_toolbar.addAction(self._remove_conn_action)
 
-        reset_conn_action = QAction(_icon("refresh"), "Reset", self)
-        reset_conn_action.triggered.connect(self.reset_connections_requested)
-        conn_toolbar.addAction(reset_conn_action)
+        self._reset_conn_action = QAction(_icon("refresh"), "Reset", self)
+        self._reset_conn_action.triggered.connect(self.reset_connections_requested)
+        conn_toolbar.addAction(self._reset_conn_action)
 
         conn_layout.addWidget(conn_toolbar)
 
@@ -545,6 +553,8 @@ class RxTxWindow(BaseDockWindow):
         self._conn_view.setItemDelegateForColumn(4, InterfaceDelegate(self._conn_view))
         self._conn_view.header().setStretchLastSection(True)
         self._conn_view.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self._conn_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._conn_view.customContextMenuRequested.connect(self._conn_context_menu)
         self._set_default_widths(self._conn_view, _DEFAULT_CONN_WIDTHS)
         conn_layout.addWidget(self._conn_view)
         self._splitter.addWidget(conn_container)
@@ -918,6 +928,41 @@ class RxTxWindow(BaseDockWindow):
                 )
                 self._send_once_callback(msg)
                 self._tx_model.increment_count(row)
+
+    def _tx_context_menu(self, pos):
+        """Show a context menu for the TX view."""
+        has_sel = self._tx_view.selectionModel().hasSelection()
+        self._remove_tx_action.setEnabled(has_sel)
+        self._duplicate_tx_action.setEnabled(has_sel)
+        self._send_once_action.setEnabled(has_sel)
+        self._up_tx_action.setEnabled(has_sel)
+        self._down_tx_action.setEnabled(has_sel)
+        self._add_tx_watch_action.setEnabled(has_sel)
+        self._add_tx_plot_action.setEnabled(has_sel)
+        menu = QMenu(self)
+        menu.addAction(self._add_tx_action)
+        menu.addAction(self._remove_tx_action)
+        menu.addAction(self._duplicate_tx_action)
+        menu.addSeparator()
+        menu.addAction(self._send_once_action)
+        menu.addSeparator()
+        menu.addAction(self._up_tx_action)
+        menu.addAction(self._down_tx_action)
+        menu.addSeparator()
+        menu.addAction(self._add_tx_watch_action)
+        menu.addAction(self._add_tx_plot_action)
+        menu.exec(self._tx_view.viewport().mapToGlobal(pos))
+
+    def _conn_context_menu(self, pos):
+        """Show a context menu for the Connections view."""
+        has_sel = self._conn_view.selectionModel().hasSelection()
+        self._remove_conn_action.setEnabled(has_sel)
+        menu = QMenu(self)
+        menu.addAction(self._add_conn_action)
+        menu.addAction(self._remove_conn_action)
+        menu.addSeparator()
+        menu.addAction(self._reset_conn_action)
+        menu.exec(self._conn_view.viewport().mapToGlobal(pos))
 
     def _rx_context_menu(self, pos):
         """Show a context menu for the RX view that respects the full multi-selection.

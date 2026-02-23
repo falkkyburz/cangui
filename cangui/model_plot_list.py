@@ -8,7 +8,7 @@ than on every raw CAN frame.
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QTimer
+from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QTimer, QByteArray, QMimeData
 
 from cangui.can_message import CanMessage
 from cangui.signal_decoder import SignalDecoder
@@ -40,6 +40,8 @@ class PlotEntry:
 
 
 COLUMNS = ["Name", "Value", "Color", "Width", "Visible", "Unit", "Direction", "Origin"]
+
+_DRAG_MIME = "application/x-cangui-rows"
 
 COL_NAME = 0
 COL_VALUE = 1
@@ -168,10 +170,10 @@ class PlotListModel(QAbstractTableModel):
         return None
 
     def flags(self, index: QModelIndex):
-        """Return interaction flags for the given cell.
+        """Return interaction flags for the given cell, including drag support.
 
         The ``Visible`` column is checkable; the ``Width`` column is
-        inline-editable; all other cells are read-only.
+        inline-editable; valid rows are drag-enabled.
 
         Args:
             index: Cell position in the model.
@@ -185,7 +187,64 @@ class PlotListModel(QAbstractTableModel):
             flags |= Qt.ItemFlag.ItemIsUserCheckable
         elif col == COL_WIDTH:
             flags |= Qt.ItemFlag.ItemIsEditable
+        if index.isValid():
+            flags |= Qt.ItemFlag.ItemIsDragEnabled
+        flags |= Qt.ItemFlag.ItemIsDropEnabled
         return flags
+
+    def supportedDropActions(self):
+        """Return MoveAction as the only supported drop action."""
+        return Qt.DropAction.MoveAction
+
+    def mimeTypes(self):
+        """Return the list of MIME types supported for drag operations."""
+        return [_DRAG_MIME]
+
+    def mimeData(self, indexes):
+        """Encode selected row indices into MIME data.
+
+        Args:
+            indexes: List of selected model indexes.
+
+        Returns:
+            :class:`QMimeData` with encoded row indices.
+        """
+        mime = QMimeData()
+        rows = sorted({idx.row() for idx in indexes if idx.isValid()})
+        mime.setData(_DRAG_MIME, QByteArray(b",".join(str(r).encode() for r in rows)))
+        return mime
+
+    def dropMimeData(self, data, action, row, col, parent):
+        """Handle a drop event by reordering entries.
+
+        Args:
+            data: MIME data carrying the source row indices.
+            action: The drop action.
+            row: The destination row index (-1 means append).
+            col: Ignored.
+            parent: Ignored for flat table.
+
+        Returns:
+            True if the drop was handled, False otherwise.
+        """
+        if not data.hasFormat(_DRAG_MIME):
+            return False
+        src_rows = [int(r) for r in bytes(data.data(_DRAG_MIME)).split(b",")]
+        dest = row if row >= 0 else self.rowCount()
+        self.beginResetModel()
+        offset = 0
+        for src in sorted(src_rows):
+            effective_src = src - offset
+            effective_dest = dest - offset if dest > src else dest
+            if effective_src == effective_dest:
+                continue
+            item = self._entries.pop(effective_src)
+            self._entries.insert(effective_dest, item)
+            if dest > src:
+                offset += 1
+        self._rebuild_index()
+        self.endResetModel()
+        return True
 
     def setData(self, index: QModelIndex, value, role=Qt.ItemDataRole.EditRole):
         """Write a new value into the model and emit ``dataChanged``.
