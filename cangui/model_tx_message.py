@@ -86,7 +86,7 @@ class TxMessageItem:
     last_sent_data: bytes | None = None  # set by script plugin feedback; display-only
 
 
-COLUMNS = ["Bus", "ID (hex)", "Ext", "Type", "Length", "Symbol",
+COLUMNS = ["Bus", "ID (hex)", "Ext", "Type", "DLC", "Symbol",
            "Data (hex)", "Cycle Time", "Count", "Trigger", "Creator"]
 
 _DRAG_MIME = "application/x-cangui-rows"
@@ -131,6 +131,8 @@ class TxMessageModel(QAbstractItemModel):
         self._items: list[TxMessageItem] = []
         self._decoder: SignalDecoder | None = None
         self._pending_last_sent: dict[int, bytes] = {}
+        self._raw_hex_editing_rows: set[int] = set()
+        self._deferred_last_sent: dict[int, bytes] = {}
 
     def set_decoder(self, decoder: SignalDecoder):
         """Attach the signal decoder used for DBC look-ups and encoding.
@@ -623,6 +625,19 @@ class TxMessageModel(QAbstractItemModel):
             ]
             self.endInsertRows()
 
+            # Keep payload length aligned with the DBC message length so
+            # decode/encode hooks (e.g. E2E scripts) target the expected bytes.
+            info = self._decoder.get_message_info(item.can_id)
+            if info is not None:
+                msg_len, _ = info
+                if msg_len >= 0 and (item.length != msg_len or len(item.raw_data) != msg_len):
+                    if len(item.raw_data) < msg_len:
+                        item.raw_data.extend(b"\x00" * (msg_len - len(item.raw_data)))
+                    else:
+                        item.raw_data = item.raw_data[:msg_len]
+                    item.length = msg_len
+                    item.last_sent_data = None
+
             # Decode current raw_data to get actual signal values
             self._redecode_signals(row)
 
@@ -638,16 +653,22 @@ class TxMessageModel(QAbstractItemModel):
         if not decoded:
             return
         decoded_map = {d.name: d for d in decoded}
-        for sig in item.signals:
+        changed_rows: list[int] = []
+        for child_row, sig in enumerate(item.signals):
             if sig.name in decoded_map:
                 ds = decoded_map[sig.name]
-                sig.value = ds.value
+                if sig.value != ds.value:
+                    sig.value = ds.value
+                    changed_rows.append(child_row)
 
-        # Notify signal rows changed
+        # Notify only rows whose displayed value changed, to avoid clobbering
+        # active editors in unrelated child rows during cyclic TX updates.
+        if not changed_rows:
+            return
         parent_idx = self.index(row, 0)
-        first = self.index(0, 0, parent_idx)
-        last = self.index(len(item.signals) - 1, self.columnCount() - 1, parent_idx)
-        self.dataChanged.emit(first, last)
+        for child_row in changed_rows:
+            idx = self.index(child_row, 6, parent_idx)
+            self.dataChanged.emit(idx, idx)
 
     def _encode_signals(self, row: int):
         """Encode signal values back into raw_data.
@@ -828,10 +849,30 @@ class TxMessageModel(QAbstractItemModel):
     def update_last_sent(self, row: int, data: bytes):
         """Coalesce script-plugin display updates; flushed at most every 50 ms."""
         if 0 <= row < len(self._items):
+            if row in self._raw_hex_editing_rows:
+                self._deferred_last_sent[row] = data
+                return
             was_empty = not self._pending_last_sent
             self._pending_last_sent[row] = data
             if was_empty:
                 QTimer.singleShot(50, self._flush_last_sent)
+
+    def set_raw_hex_editing(self, row: int, editing: bool):
+        """Mark/unmark a top-level row's raw-hex cell as actively edited.
+
+        While a row is marked as editing, ``update_last_sent`` payloads are
+        deferred so the editor text is not overwritten by live TX updates.
+        When editing ends, the latest deferred payload (if any) is applied.
+        """
+        if not (0 <= row < len(self._items)):
+            return
+        if editing:
+            self._raw_hex_editing_rows.add(row)
+            return
+        self._raw_hex_editing_rows.discard(row)
+        if row in self._deferred_last_sent:
+            data = self._deferred_last_sent.pop(row)
+            self.update_last_sent(row, data)
 
     def _flush_last_sent(self):
         """Apply coalesced ``last_sent_data`` updates and redecode affected rows.
@@ -845,6 +886,9 @@ class TxMessageModel(QAbstractItemModel):
         self._pending_last_sent = {}
         for row, data in pending.items():
             if 0 <= row < len(self._items):
+                if row in self._raw_hex_editing_rows:
+                    self._deferred_last_sent[row] = data
+                    continue
                 self._items[row].last_sent_data = data
                 idx = self.index(row, 6)
                 self.dataChanged.emit(idx, idx)

@@ -123,7 +123,7 @@ QHeaderView::section {
     border-bottom: 1px solid #D0D1D5;
     padding: 2px 4px;
     font-weight: bold;
-    font-size: 11px;
+    font-size: 13px;
 }
 QHeaderView::section:last {
     border-right: none;

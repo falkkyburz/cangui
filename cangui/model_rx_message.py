@@ -58,8 +58,6 @@ class SignalItem:
         is_multiplexer: True when this signal is the mux selector for the message.
         multiplexer_ids: List of mux ID values this signal belongs to, or None
             when the signal is not multiplexed.
-        last_update: Monotonic timestamp of the most recent value change; used
-            for the 1.5 s fade-in highlight effect.
     """
 
     name: str = ""
@@ -67,7 +65,6 @@ class SignalItem:
     unit: str = ""
     is_multiplexer: bool = False
     multiplexer_ids: list[int] | None = None
-    last_update: float = -1000.0
 
 
 @dataclass
@@ -110,8 +107,8 @@ class RxMessageItem:
     signals: list[SignalItem] = field(default_factory=list)
 
 
-COLUMNS = ["Bus", "ID (hex)", "Ext", "Type", "Length", "Symbol",
-           "Data (hex)", "Timing Errors", "Cycle Time", "Count"]
+COLUMNS = ["Bus", "ID (hex)", "Ext", "Type", "DLC", "Symbol",
+           "Data (hex)", "Cycle Time", "Count", "Timing Errors"]
 
 STALE_TIMEOUT_S = 5.0   # seconds with no update before a row is greyed out
 _STALE_COLOR = QColor("#808080")
@@ -190,12 +187,6 @@ class RxMessageModel(QAbstractItemModel):
         self._stale_timer.setInterval(500)
         self._stale_timer.timeout.connect(self._check_stale)
         self._stale_timer.start()
-
-        # Signal highlight: repaint fading green within 1.5 s of a value change
-        self._highlight_timer = QTimer(self)
-        self._highlight_timer.setInterval(100)
-        self._highlight_timer.timeout.connect(self._refresh_signal_highlights)
-        self._highlight_timer.start()
 
     def set_decoder(self, decoder: SignalDecoder):
         """Replace the signal decoder used for symbol resolution and decoding.
@@ -385,18 +376,6 @@ class RxMessageModel(QAbstractItemModel):
                     return f"Last seen {elapsed:.1f} s ago"
             return None
 
-        if role == Qt.ItemDataRole.BackgroundRole:
-            if not self._is_top_level(index):
-                parent_row = index.internalId() - 1
-                if 0 <= parent_row < len(self._items):
-                    sigs = self._items[parent_row].signals
-                    if 0 <= index.row() < len(sigs):
-                        elapsed = time.monotonic() - sigs[index.row()].last_update
-                        if elapsed < 1.5:
-                            alpha = max(0, int(180 * (1.0 - elapsed / 1.5)))
-                            return QColor(100, 200, 100, alpha)
-            return None
-
         if role != Qt.ItemDataRole.DisplayRole:
             return None
 
@@ -415,9 +394,9 @@ class RxMessageModel(QAbstractItemModel):
                 case 4: return item.length
                 case 5: return item.symbol
                 case 6: return " ".join(f"{b:02X}" for b in item.raw_data[:item.length])
-                case 7: return item.timing_errors if item.timing_errors else ""
-                case 8: return f"{item.cycle_time_ms:.1f}" if item.cycle_time_ms else ""
-                case 9: return item.count
+                case 7: return f"{item.cycle_time_ms:.1f}" if item.cycle_time_ms else ""
+                case 8: return item.count
+                case 9: return item.timing_errors if item.timing_errors else ""
         else:
             parent_row = index.internalId() - 1
             if parent_row >= len(self._items):
@@ -515,6 +494,7 @@ class RxMessageModel(QAbstractItemModel):
         Args:
             item: The ``RxMessageItem`` whose ``raw_data`` will be decoded.
                   ``item.signals`` and ``item.symbol`` are updated in-place.
+
         """
         if self._decoder is None:
             return
@@ -538,20 +518,15 @@ class RxMessageModel(QAbstractItemModel):
         old_count = len(item.signals)
         new_count = len(new_signals)
 
-        now = time.monotonic()
         if old_count == new_count:
             for i, sig in enumerate(new_signals):
                 old = item.signals[i]
                 old.name = sig.name
-                if old.value != sig.value:
-                    old.last_update = now
                 old.value = sig.value
                 old.unit = sig.unit
                 old.is_multiplexer = sig.is_multiplexer
                 old.multiplexer_ids = sig.multiplexer_ids
         else:
-            for sig in new_signals:
-                sig.last_update = now
             item.signals = new_signals
 
     def _flush(self):
@@ -666,6 +641,7 @@ class RxMessageModel(QAbstractItemModel):
                     self.index(0, 0, parent_idx),
                     self.index(len(item.signals) - 1,
                                self.columnCount() - 1, parent_idx),
+                    [Qt.ItemDataRole.DisplayRole],
                 )
 
     def _check_stale(self):
@@ -697,6 +673,7 @@ class RxMessageModel(QAbstractItemModel):
                 self.dataChanged.emit(
                     self.index(0, 0, parent_idx),
                     self.index(len(item.signals) - 1, self.columnCount() - 1, parent_idx),
+                    [Qt.ItemDataRole.ForegroundRole],
                 )
 
     def clear_errors(self):
@@ -714,25 +691,6 @@ class RxMessageModel(QAbstractItemModel):
         self._items = [item for item in self._items if not item.is_error_frame]
         self._id_to_row = {(item.bus, item.can_id): i for i, item in enumerate(self._items)}
         self.endResetModel()
-
-    def _refresh_signal_highlights(self):
-        """Periodic timer (100 ms): repaint signal rows whose highlight is still active.
-
-        Emits dataChanged for each parent row that has at least one signal with a
-        highlight younger than 1.5 s so the fade-in green effect updates smoothly.
-        """
-        if not self._items:
-            return
-        now = time.monotonic()
-        for row, item in enumerate(self._items):
-            if not item.signals:
-                continue
-            if any(now - sig.last_update < 1.5 for sig in item.signals):
-                parent_idx = self.index(row, 0)
-                self.dataChanged.emit(
-                    self.index(0, 0, parent_idx),
-                    self.index(len(item.signals) - 1, self.columnCount() - 1, parent_idx),
-                )
 
     def clear(self):
         """Remove all messages and reset all internal state.

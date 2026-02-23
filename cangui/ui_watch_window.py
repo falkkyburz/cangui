@@ -85,15 +85,15 @@ class WatchWindow(BaseDockWindow):
 
         toolbar.addSeparator()
 
-        self._to_right_action = QAction(_icon("right"), "Move to Right Pane", self)
-        self._to_right_action.setToolTip("Move selected signal to right pane")
-        self._to_right_action.triggered.connect(self._move_to_right)
-        toolbar.addAction(self._to_right_action)
-
         self._to_left_action = QAction(_icon("left"), "Move to Left Pane", self)
         self._to_left_action.setToolTip("Move selected signal to left pane")
         self._to_left_action.triggered.connect(self._move_to_left)
         toolbar.addAction(self._to_left_action)
+
+        self._to_right_action = QAction(_icon("right"), "Move to Right Pane", self)
+        self._to_right_action.setToolTip("Move selected signal to right pane")
+        self._to_right_action.triggered.connect(self._move_to_right)
+        toolbar.addAction(self._to_right_action)
 
         toolbar.addSeparator()
 
@@ -122,9 +122,7 @@ class WatchWindow(BaseDockWindow):
 
         self._layout.addWidget(pane_widget)
 
-        self._model.rowsInserted.connect(lambda *_: self._resize_columns())
-        self._model.modelReset.connect(lambda *_: self._resize_columns())
-        QTimer.singleShot(0, self._resize_columns)
+        QTimer.singleShot(0, self._apply_default_column_sizes)
 
         # Mutual selection clearing: selecting in one pane clears the other
         self._pane_selecting = False
@@ -141,8 +139,9 @@ class WatchWindow(BaseDockWindow):
         view.setRootIsDecorated(False)
         view.setAlternatingRowColors(True)
         view.setModel(proxy)
-        view.header().setStretchLastSection(True)
-        view.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        header = view.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         view.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
         view.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
         view.setDragEnabled(True)
@@ -243,11 +242,19 @@ class WatchWindow(BaseDockWindow):
         for row in self._selected_source_rows():
             self._model.set_entry_pane(row, 0)
 
-    def _resize_columns(self):
-        """Resize all columns except the last to fit their contents."""
+    def _apply_default_column_sizes(self):
+        """Set Dir to text-fit width and split remaining space 50/50."""
         for view in (self._left_view, self._right_view):
-            for i in range(self._model.columnCount() - 1):
-                view.resizeColumnToContents(i)
+            header = view.header()
+            dir_text_width = header.fontMetrics().horizontalAdvance("Dir")
+            dir_width = dir_text_width + 24
+            available = max(0, view.viewport().width())
+            remaining = max(160, available - dir_width)
+            name_width = remaining // 2
+            value_width = remaining - name_width
+            header.resizeSection(0, name_width)
+            header.resizeSection(1, value_width)
+            header.resizeSection(2, dir_width)
 
     def _on_context_menu(self, pos):
         """Show a context menu at the given viewport position."""

@@ -110,7 +110,7 @@ class TabVisibilityOptions:
     project_manager: bool = True
     watch: bool = True
     watch_did: bool = False
-    dtc: bool = True
+    dtc: bool = False
     rx_filter: bool = True
     plot_list: bool = True
     settings: bool = True

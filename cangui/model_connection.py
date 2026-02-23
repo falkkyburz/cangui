@@ -101,14 +101,12 @@ class ConnectionModel(QAbstractTableModel):
         4: interface name (editable via InterfaceDelegate).
         5: bit rate in bps (editable; displayed as "N kbit/s").
         6: status string (colour-coded: green = OK, amber = Bus Heavy, red = Bus Off / Error*).
-        7: overrun counter (read-only).
-        8: Tx-queue-full counter (read-only).
-        9: frame format ("FD" or "EF", read-only).
-        10: bus load percentage (read-only, currently empty).
+        7: listen-only flag (checkable).
+        8: bus load percentage (read-only, currently empty).
     """
 
     COLUMNS = ["", "Bus", "Name", "Channel", "Interface", "Bit Rate", "Status",
-               "Overruns", "QXmtFulls", "Listen Only", "Bus Load"]
+               "Listen Only", "Bus Load"]
 
     def __init__(self, can_service: CanService, parent=None):
         """Initialise the model and connect to CanService signals.
@@ -199,16 +197,12 @@ class ConnectionModel(QAbstractTableModel):
                     return f"{conn.config.bitrate // 1000} kbit/s"
                 case 6:
                     return conn.status
-                case 7:
-                    return conn.overruns
                 case 8:
-                    return conn.qxmt_fulls
-                case 10:
                     if conn.bus.is_connected and conn.bus_load > 0.0:
                         return f"{conn.bus_load:.0f}%"
                     return ""
 
-        if role == Qt.ItemDataRole.CheckStateRole and col == 9:
+        if role == Qt.ItemDataRole.CheckStateRole and col == 7:
             return Qt.CheckState.Checked if conn.config.listen_only else Qt.CheckState.Unchecked
 
         if role == Qt.ItemDataRole.ForegroundRole and col == 6:
@@ -244,7 +238,7 @@ class ConnectionModel(QAbstractTableModel):
         """
         flags = super().flags(index)
         col = index.column()
-        if col in (0, 9):
+        if col in (0, 7):
             flags |= Qt.ItemFlag.ItemIsUserCheckable
         if col in (2, 3, 4, 5):
             flags |= Qt.ItemFlag.ItemIsEditable
@@ -284,7 +278,7 @@ class ConnectionModel(QAbstractTableModel):
                 self._service.disconnect(row)
             return True
 
-        if role == Qt.ItemDataRole.CheckStateRole and index.column() == 9:
+        if role == Qt.ItemDataRole.CheckStateRole and index.column() == 7:
             row = index.row()
             conn = self._service.connections[row]
             conn.config.listen_only = Qt.CheckState(value) == Qt.CheckState.Checked
@@ -382,8 +376,8 @@ class ConnectionModel(QAbstractTableModel):
     def _on_status_changed(self, index: int, _status: str):
         """Handle CanService.connection_status_changed by refreshing the whole row.
 
-        Status changes may affect multiple columns (e.g. colour-coded status,
-        overrun counters), so the entire row range is invalidated.
+        Status changes may affect multiple columns (e.g. colour-coded status),
+        so the entire row range is invalidated.
 
         Args:
             index: The zero-based row whose connection status changed.

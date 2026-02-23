@@ -1,7 +1,7 @@
 """Trace window panel for recording, replaying, and browsing CAN bus traces.
 
 Provides a toolbar-driven QTableView backed by TraceModel, with controls for
-starting/pausing/stopping live recording, loading and saving trace files in
+starting/stopping live recording, loading and saving trace files in
 TRC or BLF format, configuring replay speed, and live-filtering displayed
 messages by CAN ID or text.
 """
@@ -91,7 +91,7 @@ class TraceWindow(BaseDockWindow):
     """Trace recording and replay panel backed by TraceModel.
 
     Displays all captured CAN frames in a QTableView and exposes toolbar
-    actions for recording control (start/pause/stop), file I/O (save/load),
+    actions for recording control (start/stop), file I/O (save/load),
     replay-speed selection, and a live text filter.  A status bar shows the
     running message count, the current message rate, and the recording state.
 
@@ -111,10 +111,8 @@ class TraceWindow(BaseDockWindow):
     _STATE_STYLE: dict[str, str] = {
         "Stopped":   "color: gray;",
         "Recording": "color: #CC0000; font-weight: bold;",
-        "Paused":    "color: #CC7700;",
         "Replaying": "color: #006699;",
     }
-
     TITLE = "Trace"
 
     load_trace_requested = Signal(str)  # file path
@@ -126,7 +124,7 @@ class TraceWindow(BaseDockWindow):
 
         Constructs the recording toolbar, speed selector, filter bar,
         QTableView, and status bar, then connects the model's signals for
-        auto-scroll, row-count updates, file-name display, and rate display.
+        row-count updates, file-name display, and rate display.
 
         Args:
             model: The TraceModel that provides CAN frame data to the view.
@@ -134,11 +132,11 @@ class TraceWindow(BaseDockWindow):
         """
         super().__init__(parent)
         self._model = model
-        self._auto_scroll = True
 
         # Sort/filter proxy — wraps the raw TraceModel
         self._proxy = _TraceSortProxy(self)
         self._proxy.setSourceModel(self._model)
+        self._proxy.setDynamicSortFilter(False)
 
         # Toolbar
         toolbar = QToolBar()
@@ -147,11 +145,6 @@ class TraceWindow(BaseDockWindow):
         self._start_action = QAction(_icon("record"), "Start [F9]", self)
         self._start_action.triggered.connect(self._on_start)
         toolbar.addAction(self._start_action)
-
-        self._pause_action = QAction(_icon("pause"), "Pause", self)
-        self._pause_action.setEnabled(False)
-        self._pause_action.triggered.connect(self._on_pause)
-        toolbar.addAction(self._pause_action)
 
         self._stop_action = QAction(_icon("stop"), "Stop [F6]", self)
         self._stop_action.setEnabled(False)
@@ -220,11 +213,13 @@ class TraceWindow(BaseDockWindow):
         self._table.setAlternatingRowColors(True)
         self._table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableView.SelectionMode.ExtendedSelection)
-        self._table.setSortingEnabled(True)
+        self._table.setSortingEnabled(False)
         self._table.verticalHeader().setVisible(False)
         header = self._table.horizontalHeader()
         header.setStretchLastSection(True)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        header.setSectionsClickable(False)
+        header.setSortIndicatorShown(False)
         # Use fixed widths instead of ResizeToContents (which measures ALL rows)
         for col, width in enumerate([60, 80, 35, 70, 35, 45, 35, 200]):
             header.resizeSection(col, width)
@@ -259,7 +254,7 @@ class TraceWindow(BaseDockWindow):
 
         Args:
             text: State name; one of ``"Stopped"``, ``"Recording"``,
-                ``"Paused"``, or ``"Replaying"``.
+                or ``"Replaying"``.
         """
         self._state_label.setText(text)
         self._state_label.setStyleSheet(self._STATE_STYLE.get(text, ""))
@@ -288,14 +283,13 @@ class TraceWindow(BaseDockWindow):
         return self._speed_spin.value()
 
     def _update_button_state(self, recording: bool):
-        """Enable or disable the Start/Pause/Stop toolbar actions.
+        """Enable or disable the Start/Stop toolbar actions.
 
         Args:
             recording: ``True`` while a recording is active; ``False`` when
-                stopped or paused.
+                stopped.
         """
         self._start_action.setEnabled(not recording)
-        self._pause_action.setEnabled(recording)
         self._stop_action.setEnabled(recording)
 
     def _on_start(self):
@@ -305,13 +299,6 @@ class TraceWindow(BaseDockWindow):
             start_recording_requested: Always, when the Start button is clicked.
         """
         self.start_recording_requested.emit()
-
-    def _on_pause(self):
-        """Pause live recording and update toolbar and status label."""
-        self._model.pause()
-        self._update_button_state(False)
-        self._start_action.setEnabled(True)
-        self._set_state("Paused")
 
     def set_recording_state(self, recording: bool):
         """Update button states and status label without touching the model.
@@ -365,10 +352,8 @@ class TraceWindow(BaseDockWindow):
             self.load_trace_requested.emit(path)
 
     def _on_entries_committed(self):
-        """Refresh the message-count label and auto-scroll to the newest row."""
+        """Refresh the message-count label."""
         self._count_label.setText(f"Messages: {self._model.message_count}")
-        if self._auto_scroll and not self._filter_edit.text():
-            self._table.scrollToBottom()
 
     def _on_model_reset(self):
         """Refresh the message-count label after the model is fully reset."""
@@ -396,8 +381,6 @@ class TraceWindow(BaseDockWindow):
             text: Free-form filter string; an empty string shows all rows.
         """
         self._proxy.setFilterFixedString(text)
-        if self._auto_scroll and not text:
-            self._table.scrollToBottom()
 
     def _on_rate_updated(self, rate: int):
         """Refresh the rate label in the status bar.

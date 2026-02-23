@@ -5,8 +5,8 @@ Captured CanMessage objects pass through a two-stage pipeline:
 1. A 50 ms batch timer (_batch_timer) drains _pending into TraceEntry objects
    and hands them to _staged.  All disk I/O is delegated non-blocking to
    _DiskWriterThread via a SimpleQueue.
-2. A 200 ms view timer (_view_timer) commits _staged to _entries and emits the
-   Qt data-change notifications that update the on-screen table.
+2. A periodic view timer (_view_timer) refreshes the on-screen table with only
+   the most recent rows from _staged.
 
 The deque has a hard cap of DISPLAY_BUFFER_SIZE rows; older entries are dropped
 automatically once the buffer is full.
@@ -53,10 +53,11 @@ class TraceEntry:
     data: bytes
 
 
-COLUMNS = ["#", "Time", "Bus", "CAN-ID", "Dir", "Type", "DLC", "Data"]
+COLUMNS = ["#", "Time", "Bus", "ID (hex)", "Dir", "Type", "DLC", "Data (hex)"]
 
-DISPLAY_BUFFER_SIZE = 100_000
+DISPLAY_BUFFER_SIZE = 100
 MAX_FILE_SIZE = 1_000_000_000  # 1 GB
+VIEW_UPDATE_INTERVAL_MS = 250
 
 
 class _DiskWriterThread(QThread):
@@ -183,9 +184,8 @@ class TraceModel(QAbstractTableModel):
     Received messages are collected in a _pending list on the main thread.
     A 50 ms _batch_timer converts _pending entries into TraceEntry objects
     (draining into _staged) and hands disk writes to _DiskWriterThread.
-    A 200 ms _view_timer commits _staged into the _entries deque, issuing
-    the appropriate Qt model-change signals so the view refreshes smoothly
-    without flooding the event loop.
+    A periodic _view_timer refreshes the display deque from _staged, keeping
+    only a small latest-row window visible in the table.
 
     Signals:
         file_changed (str): Emitted when the active trace file path changes.
@@ -208,8 +208,9 @@ class TraceModel(QAbstractTableModel):
         """
         super().__init__(parent)
         self._entries: deque[TraceEntry] = deque(maxlen=DISPLAY_BUFFER_SIZE)
-        # Staging list: TraceEntry objects waiting to be committed to the display model.
-        self._staged: list[TraceEntry] = []
+        # Staging deque: TraceEntry objects waiting to be committed to the display model.
+        # deque avoids O(n) front-deletes when the UI is behind.
+        self._staged: deque[TraceEntry] = deque()
         self._msg_number = 0
         self._start_time: float | None = None
         self._pending: list[CanMessage] = []
@@ -232,9 +233,9 @@ class TraceModel(QAbstractTableModel):
         self._batch_timer.timeout.connect(self._flush)
         self._batch_timer.start()
 
-        # View timer: commit staged entries to the model (screen update)
+        # View timer: periodically refresh the on-screen window.
         self._view_timer = QTimer(self)
-        self._view_timer.setInterval(100)
+        self._view_timer.setInterval(VIEW_UPDATE_INTERVAL_MS)
         self._view_timer.timeout.connect(self._commit_staged)
         self._view_timer.start()
 
@@ -300,15 +301,29 @@ class TraceModel(QAbstractTableModel):
         return self._entries
 
     def start(self):
-        """Begin capturing messages and, if a trace folder is configured, open a new file."""
+        """Begin capturing a fresh session and open a new trace file if configured.
+
+        Starting always resets the in-memory display/session state so message
+        count and relative timestamps restart at zero for the new recording.
+        """
+        self.beginResetModel()
+        self._entries.clear()
+        self._staged.clear()
+        self._pending.clear()
+        self._pending_directions.clear()
+        self._msg_number = 0
+        self._start_time = None
+        self.endResetModel()
+
+        # Reset rate tracking for the new session.
+        self._rate_count = 0
+        self._rate_window_start = time.monotonic()
+        self.rate_updated.emit(0)
+
         self._recording = True
         if self._trace_folder is not None:
             base_name = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
             self._disk_thread.cmd_start(self._trace_folder, self._trace_format, base_name)
-
-    def pause(self):
-        """Suspend capture without closing the trace file."""
-        self._recording = False
 
     def stop(self):
         """Stop capturing, flush pending data, and close the trace file."""
@@ -401,26 +416,22 @@ class TraceModel(QAbstractTableModel):
             self._staged.append(entry)
 
     def _commit_staged(self):
-        """Slow timer (200ms): commit staged entries to the display model."""
+        """Slow timer: keep only the latest rows and refresh the table periodically."""
         if not self._staged:
             return
-        staged = self._staged
-        self._staged = []
+        # Keep only the most recent staged rows for rendering; older rows are
+        # still written to trace file by the disk writer.
+        excess = len(self._staged) - DISPLAY_BUFFER_SIZE
+        if excess > 0:
+            for _ in range(excess):
+                self._staged.popleft()
 
-        old_size = len(self._entries)
-        count = len(staged)
+        staged = list(self._staged)
+        self._staged.clear()
 
-        if old_size + count <= DISPLAY_BUFFER_SIZE:
-            # Buffer has room — inform the view of the exact rows added.
-            self.beginInsertRows(QModelIndex(), old_size, old_size + count - 1)
-            self._entries.extend(staged)
-            self.endInsertRows()
-        else:
-            # Buffer is full (or will overflow): the deque drops old entries from
-            # the front.  A full reset is cheaper than claiming all 100K rows changed.
-            self.beginResetModel()
-            self._entries.extend(staged)
-            self.endResetModel()
+        self.beginResetModel()
+        self._entries.extend(staged)
+        self.endResetModel()
 
         self.entries_committed.emit()
 

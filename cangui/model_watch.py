@@ -6,11 +6,9 @@ objects are buffered and decoded on a 100 ms timer so the UI is not hammered
 by high-frequency CAN traffic.
 """
 
-import time
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QTimer, QByteArray, QMimeData
-from PySide6.QtGui import QColor
 
 from cangui.can_message import CanMessage
 from cangui.signal_decoder import SignalDecoder
@@ -36,7 +34,6 @@ class WatchEntry:
     unit: str = ""
     direction: str = "Rx"
     pane: int = 0
-    last_update: float = -1000.0
 
     @property
     def name(self) -> str:
@@ -44,7 +41,7 @@ class WatchEntry:
         return self.display_name or self.signal_name
 
 
-COLUMNS = ["Name", "Value", "Direction"]
+COLUMNS = ["Name", "Value", "Dir"]
 
 _DRAG_MIME = "application/x-cangui-rows"
 
@@ -77,11 +74,6 @@ class WatchModel(QAbstractTableModel):
         self._batch_timer.setInterval(100)
         self._batch_timer.timeout.connect(self._flush)
         self._batch_timer.start()
-
-        self._highlight_timer = QTimer(self)
-        self._highlight_timer.setInterval(100)
-        self._highlight_timer.timeout.connect(self._refresh_highlights)
-        self._highlight_timer.start()
 
     def set_decoder(self, decoder: SignalDecoder):
         """Replace the active signal decoder.
@@ -132,14 +124,14 @@ class WatchModel(QAbstractTableModel):
         return None
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
-        """Return display text, tooltip, or background colour for the given cell.
+        """Return display text or tooltip for the given cell.
 
         The Value column (1) appends the unit string when present.  Column 0
         carries a tooltip showing the signal origin (message.signal + CAN ID).
 
         Args:
             index: Cell position in the model.
-            role: ``DisplayRole``, ``ToolTipRole``, or ``BackgroundRole``.
+            role: ``DisplayRole`` or ``ToolTipRole``.
 
         Returns:
             Cell value, or ``None`` for unhandled roles or invalid indices.
@@ -153,13 +145,6 @@ class WatchModel(QAbstractTableModel):
             if msg_name:
                 return f"Source: {msg_name}.{entry.signal_name} (ID: 0x{entry.arb_id:X})"
             return f"Signal: {entry.signal_name} (ID: 0x{entry.arb_id:X})"
-
-        if role == Qt.ItemDataRole.BackgroundRole:
-            elapsed = time.monotonic() - entry.last_update
-            if elapsed < 1.5:
-                alpha = max(0, int(180 * (1.0 - elapsed / 1.5)))
-                return QColor(100, 200, 100, alpha)
-            return None
 
         if role != Qt.ItemDataRole.DisplayRole:
             return None
@@ -354,7 +339,6 @@ class WatchModel(QAbstractTableModel):
                         new_val = ds.display_value
                         if entry.value != new_val:
                             entry.value = new_val
-                            entry.last_update = time.monotonic()
                             if not entry.unit and ds.unit:
                                 entry.unit = ds.unit
                             changed_indices.add(idx)
@@ -366,6 +350,7 @@ class WatchModel(QAbstractTableModel):
             self.dataChanged.emit(
                 self.index(min_idx, 1),
                 self.index(max_idx, 1),
+                [Qt.ItemDataRole.DisplayRole],
             )
 
     def set_entry_pane(self, row: int, pane: int):
@@ -382,18 +367,6 @@ class WatchModel(QAbstractTableModel):
             self._entries[row].pane = pane
             self.beginResetModel()
             self.endResetModel()
-
-    def _refresh_highlights(self):
-        """Periodic timer (100 ms): repaint rows whose highlight is still active."""
-        if not self._entries:
-            return
-        now = time.monotonic()
-        active_rows = [i for i, e in enumerate(self._entries) if now - e.last_update < 1.5]
-        if active_rows:
-            self.dataChanged.emit(
-                self.index(min(active_rows), 0),
-                self.index(max(active_rows), self.columnCount() - 1),
-            )
 
     def _rebuild_index(self):
         """Rebuild the arb_id-to-row-indices lookup after any structural change."""

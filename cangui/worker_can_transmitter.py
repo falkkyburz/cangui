@@ -64,8 +64,8 @@ class CanTransmitter(QThread):
 
     Args:
         tx_model: The TX message model to snapshot.
-        send_func: Callable ``(CanMessage) -> None`` that delivers the frame
-            to the active CAN bus.  Typically
+        send_func: Callable ``(CanMessage) -> bool`` that delivers the frame
+            to the active CAN bus and returns success.  Typically
             :meth:`~cangui.ui_main_window.MainWindow._send_message`.
         parent: Optional Qt parent object.
     """
@@ -168,11 +168,8 @@ class CanTransmitter(QThread):
                         bus=item.bus,
                         row=item.row,
                     )
-                    try:
-                        self._send(msg)
+                    if self._send(msg):
                         counts[item.row] = counts.get(item.row, 0) + 1
-                    except Exception:
-                        pass
                     timers[item.row] = now + item.cycle_time_ms / 1000.0
 
             # Emit accumulated counts periodically

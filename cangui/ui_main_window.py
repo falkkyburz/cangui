@@ -7,6 +7,7 @@ down.
 """
 
 import sys
+from dataclasses import dataclass
 
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QSplitter, QTabWidget, QApplication,
@@ -55,6 +56,19 @@ from cangui.ui_focus_manager import FocusManager
 from cangui.service_workspace import WorkspaceService
 from cangui.worker_can_transmitter import CanTransmitter
 from cangui.worker_trace_player import TracePlayer
+
+
+@dataclass(frozen=True)
+class _TxSendResult:
+    """Post-send result payload for one TX attempt."""
+
+    msg: CanMessage
+    requested_data: bytes
+    actual_data: bytes
+    success: bool
+    error: str
+    connection_name: str
+    endpoint: str
 
 
 class MainWindow(QMainWindow):
@@ -106,6 +120,7 @@ class MainWindow(QMainWindow):
     """
 
     _tx_display_update = Signal(int, bytes)  # (row, actual_data) — cross-thread, queued
+    _tx_send_result = Signal(object)  # _TxSendResult — cross-thread, queued
 
     def __init__(self, parent=None):
         """Initialise the main window and all application subsystems.
@@ -143,6 +158,12 @@ class MainWindow(QMainWindow):
         self._plot_trace_service.file_changed.connect(self._on_plot_trace_file_changed)
         self._plot_recording = False
         self._uds_service = UdsService(self)
+        self._commit_plugin_tx_to_raw = False
+        self._pending_tx_success: list[CanMessage] = []
+        self._tx_success_timer = QTimer(self)
+        self._tx_success_timer.setInterval(50)
+        self._tx_success_timer.timeout.connect(self._flush_tx_success)
+        self._tx_success_timer.start()
 
         # Models
         self._connection_model = ConnectionModel(self._can_service, self)
@@ -176,6 +197,9 @@ class MainWindow(QMainWindow):
 
         # Script plugin
         self._script_plugin = ScriptPlugin()
+
+        # Cross-thread TX result fan-in
+        self._tx_send_result.connect(self._on_tx_send_result)
 
         # Create windows and layout
         self._create_layout()
@@ -456,19 +480,37 @@ class MainWindow(QMainWindow):
         self._connection_model.add_empty_row()
         self._main_tabs.setCurrentWidget(self._rx_tx_win)
 
-    def _on_connection_status(self, _index: int, status: str):
+    def _on_connection_status(self, index: int, status: str):
         """React to a CAN connection status change.
 
         Starts the TX transmitter worker and invokes plugin ``init()``
         callbacks when a connection transitions to the ``"OK"`` state.
 
         Args:
-            _index: Index of the connection whose status changed (unused).
+            index: Index of the connection whose status changed.
             status: New status string; ``"OK"`` indicates a live connection.
         """
         if status == "OK":
             self._ensure_transmitter()
             self._call_plugin_inits()
+            return
+
+        if not (0 <= index < len(self._can_service.connections)):
+            return
+
+        conn = self._can_service.connections[index]
+        conn_name = conn.name
+        endpoint = f"{conn.config.interface}:{conn.config.channel}"
+        if status == "Bus Heavy":
+            self._log_win.append(
+                "WARNING",
+                f"Connection '{conn_name}' is Bus Heavy ({endpoint}).",
+            )
+        elif status == "Bus Off" or status.startswith("Error"):
+            self._log_win.append(
+                "ERROR",
+                f"Connection '{conn_name}' status changed to {status} ({endpoint}).",
+            )
 
     def _call_plugin_inits(self):
         """Pass current active connections to all loaded plugins' ``init()``.
@@ -512,23 +554,21 @@ class MainWindow(QMainWindow):
     def _send_message(self, msg):
         """Send a CAN message through the appropriate connected bus.
 
-        If a script plugin is loaded its ``apply_tx`` hook is called first,
-        allowing the plugin to modify the outgoing payload.  The message is
-        then dispatched to the bus whose ``bus_number`` matches
-        ``msg.bus``; if no match is found the first connected bus is used as
-        a fallback.
+        If a script plugin is loaded, its ``apply_tx`` hook may modify the
+        outgoing payload. Exactly one ``_tx_send_result`` event is emitted per
+        call; all UI/model updates happen in ``_on_tx_send_result``.
 
         Args:
             msg: A :class:`~cangui.can_message.CanMessage` instance to
-                transmit.  ``msg.row`` must be >= 0 for the TX display to
-                update when the plugin modifies the payload.
+                transmit.
 
-        Raises:
-            RuntimeError: If no bus is currently connected.
+        Returns:
+            ``True`` when sent successfully, ``False`` on failure.
         """
         # Resolve the target bus first so the script hook is never called
         # when no connection is active (e.g. during cyclic transmission while
         # the bus is disconnected).
+        requested_data = bytes(msg.data)
         target = None
         for conn in self._can_service.connections:
             if conn.bus.is_connected and conn.config.bus_number == msg.bus:
@@ -540,22 +580,157 @@ class MainWindow(QMainWindow):
                     target = conn
                     break
         if target is None:
-            raise RuntimeError("No connected bus")
+            self._tx_send_result.emit(_TxSendResult(
+                msg=CanMessage(
+                    arbitration_id=msg.arbitration_id,
+                    data=bytes(msg.data),
+                    is_extended_id=msg.is_extended_id,
+                    is_fd=msg.is_fd,
+                    is_remote_frame=msg.is_remote_frame,
+                    is_error_frame=msg.is_error_frame,
+                    is_rx=False,
+                    dlc=msg.dlc,
+                    timestamp=msg.timestamp,
+                    bus=msg.bus,
+                    channel=msg.channel,
+                    row=msg.row,
+                ),
+                requested_data=requested_data,
+                actual_data=bytes(msg.data),
+                success=False,
+                error="No connected bus",
+                connection_name=f"Bus {msg.bus}",
+                endpoint="unbound",
+            ))
+            return False
+
+        # Connected transport exists, but not in a sendable state.
+        # Treat this as a skipped TX attempt, not a transmission failure.
+        if target.status != "OK":
+            self._tx_send_result.emit(_TxSendResult(
+                msg=CanMessage(
+                    arbitration_id=msg.arbitration_id,
+                    data=bytes(msg.data),
+                    is_extended_id=msg.is_extended_id,
+                    is_fd=msg.is_fd,
+                    is_remote_frame=msg.is_remote_frame,
+                    is_error_frame=msg.is_error_frame,
+                    is_rx=False,
+                    dlc=msg.dlc,
+                    timestamp=msg.timestamp,
+                    bus=msg.bus,
+                    channel=target.config.channel,
+                    row=msg.row,
+                ),
+                requested_data=requested_data,
+                actual_data=bytes(msg.data),
+                success=False,
+                error=f"Bus disabled ({target.status})",
+                connection_name=target.name,
+                endpoint=f"{target.config.interface}:{target.config.channel}",
+            ))
+            return False
 
         if self._script_plugin.is_loaded:
             data = self._script_plugin.apply_tx(msg.arbitration_id, msg.data)
             if data != msg.data:
                 msg.data = data
-                if msg.row >= 0:
-                    self._tx_display_update.emit(msg.row, data)
-        target.bus.send(msg)
-        # Record TX frame in the trace (only when recording is active)
-        self._trace_model.on_message(msg, "Tx")
-        # Feed TX frames to watch/plot so their values update in the UI.
-        # list.append() is GIL-safe, matching how the trace model is called.
-        self._watch_model.on_message(msg)
-        self._plot_list_win.on_message(msg)
-        self._plot_service.on_message(msg)
+        actual_data = bytes(msg.data)
+        endpoint = f"{target.config.interface}:{target.config.channel}"
+        try:
+            target.bus.send(msg)
+        except Exception as exc:
+            self._tx_send_result.emit(_TxSendResult(
+                msg=CanMessage(
+                    arbitration_id=msg.arbitration_id,
+                    data=actual_data,
+                    is_extended_id=msg.is_extended_id,
+                    is_fd=msg.is_fd,
+                    is_remote_frame=msg.is_remote_frame,
+                    is_error_frame=msg.is_error_frame,
+                    is_rx=False,
+                    dlc=msg.dlc,
+                    timestamp=msg.timestamp,
+                    bus=msg.bus,
+                    channel=target.config.channel,
+                    row=msg.row,
+                ),
+                requested_data=requested_data,
+                actual_data=actual_data,
+                success=False,
+                error=str(exc),
+                connection_name=target.name,
+                endpoint=endpoint,
+            ))
+            return False
+
+        self._tx_send_result.emit(_TxSendResult(
+            msg=CanMessage(
+                arbitration_id=msg.arbitration_id,
+                data=actual_data,
+                is_extended_id=msg.is_extended_id,
+                is_fd=msg.is_fd,
+                is_remote_frame=msg.is_remote_frame,
+                is_error_frame=msg.is_error_frame,
+                is_rx=False,
+                dlc=msg.dlc,
+                timestamp=msg.timestamp,
+                bus=msg.bus,
+                channel=target.config.channel,
+                row=msg.row,
+            ),
+            requested_data=requested_data,
+            actual_data=actual_data,
+            success=True,
+            error="",
+            connection_name=target.name,
+            endpoint=endpoint,
+        ))
+        return True
+
+    def _on_tx_send_result(self, result: _TxSendResult):
+        """Handle one TX send result on the GUI thread."""
+        if not result.success:
+            if result.error == "No connected bus" or result.error.startswith("Bus disabled ("):
+                return
+            self._log_win.append(
+                "ERROR",
+                f"TX send failed on '{result.connection_name}' ({result.endpoint}): {result.error}",
+            )
+            return
+
+        row = result.msg.row
+        if row >= 0:
+            if self._commit_plugin_tx_to_raw and result.actual_data != result.requested_data:
+                idx = self._tx_model.index(row, 6)
+                self._tx_model.setData(
+                    idx,
+                    " ".join(f"{b:02X}" for b in result.actual_data),
+                    Qt.ItemDataRole.EditRole,
+                )
+            else:
+                self._tx_model.update_last_sent(row, result.actual_data)
+
+        # Batch-success path: keep per-send handler lightweight.
+        self._pending_tx_success.append(result.msg)
+
+    def _flush_tx_success(self):
+        """Fan out successful TX frames in batches to reduce UI-thread churn."""
+        if not self._pending_tx_success:
+            return
+        batch = self._pending_tx_success
+        self._pending_tx_success = []
+
+        # Trace model needs explicit Tx direction per frame.
+        for msg in batch:
+            self._trace_model.on_message(msg, "Tx")
+        self._watch_model.on_messages(batch)
+        self._plot_list_win.on_messages(batch)
+        self._plot_service.on_messages(batch)
+
+    def set_commit_plugin_tx_to_raw(self, enabled: bool):
+        """Set whether successful plugin TX output should overwrite row raw_data."""
+        self._commit_plugin_tx_to_raw = bool(enabled)
 
     # -- TX management --
 
@@ -921,11 +1096,6 @@ class MainWindow(QMainWindow):
             return
         self._trace_model.start()
         self._trace_win.set_recording_state(True)
-
-    def _trace_pause(self):
-        """Pause the active trace recording."""
-        self._trace_model.pause()
-        self._trace_win._on_pause()
 
     def _trace_stop(self):
         """Stop the active trace recording."""

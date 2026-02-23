@@ -92,8 +92,10 @@ class _HexFontDelegate(QStyledItemDelegate):
 
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
-        option.font.setFamily("Courier New")
-        option.font.setStyleHint(QFont.StyleHint.Monospace)
+        # Only top-level message rows in the Data (hex) column should be monospace.
+        if not index.parent().isValid():
+            option.font.setFamily("Courier New")
+            option.font.setStyleHint(QFont.StyleHint.Monospace)
 
 
 class TxSignalValueDelegate(QStyledItemDelegate):
@@ -132,7 +134,26 @@ class TxSignalValueDelegate(QStyledItemDelegate):
             combo.addItems(choices)
             QTimer.singleShot(0, combo.showPopup)
             return combo
-        return super().createEditor(parent, option, index)
+        editor = super().createEditor(parent, option, index)
+
+        # Top-level Data (hex) editor: defer live TX overlay updates while open.
+        if editor is not None and not index.parent().isValid():
+            model = index.model()
+            source_model = model
+            source_index = index
+            while isinstance(source_model, QSortFilterProxyModel):
+                source_index = source_model.mapToSource(source_index)
+                source_model = source_model.sourceModel()
+            if hasattr(source_model, "set_raw_hex_editing"):
+                source_row = source_index.row()
+                source_model.set_raw_hex_editing(source_row, True)
+                editor.destroyed.connect(
+                    lambda *_,
+                    m=source_model,
+                    r=source_row: m.set_raw_hex_editing(r, False)
+                )
+
+        return editor
 
     def setEditorData(self, editor, index):
         """Synchronise the combobox with the current model value.
@@ -256,7 +277,7 @@ class _RxSortProxy(QSortFilterProxyModel):
 
     - **Column 1** (ID hex): compared as integers so that ``"00A" < "100"``
       rather than lexicographically.
-    - **Column 8** (Cycle Time): compared as floats so that ``"12.3"`` sorts
+    - **Column 7** (Cycle Time): compared as floats so that ``"12.3"`` sorts
       after ``"9.5"`` rather than before it.
     """
 
@@ -286,7 +307,7 @@ class _RxSortProxy(QSortFilterProxyModel):
             except (ValueError, TypeError):
                 pass
 
-        if col == 8:  # Cycle Time (displayed as "12.3" or "") — compare as float
+        if col == 7:  # Cycle Time (displayed as "12.3" or "") — compare as float
             try:
                 lv = float(left.data() or 0)
             except (ValueError, TypeError):
@@ -335,12 +356,17 @@ class _TxSortProxy(QSortFilterProxyModel):
         return super().lessThan(left, right)
 
 
-# RX/TX column widths: Bus, ID(hex), Ext, Type, Length, Symbol, Data(hex), ...
-_DEFAULT_WIDTHS = [40, 80, 35, 50, 50, 120, 200, 80, 60, 60, 60]
+# RX column widths: Bus, ID(hex), Ext, Type, Length, Symbol, Data(hex),
+#                   Cycle Time, Count, Timing Errors
+_DEFAULT_RX_WIDTHS = [44, 80, 35, 50, 44, 120, 160, 58, 60, 88]
+
+# TX column widths: Bus, ID(hex), Ext, Type, Length, Symbol, Data(hex),
+#                   Cycle Time, Count, Trigger, Creator
+_DEFAULT_TX_WIDTHS = [44, 80, 35, 50, 44, 120, 160, 58, 60, 60, 60]
 
 # Connection table: (empty/checkbox), Bus, Name, Channel, Interface, Bit Rate,
-#                   Status, Overruns, QXmtFulls, Listen Only  (Bus Load stretches)
-_DEFAULT_CONN_WIDTHS = [28, 38, 80, 110, 120, 80, 60, 68, 68, 80]
+#                   Status, Listen Only, Bus Load
+_DEFAULT_CONN_WIDTHS = [28, 38, 90, 110, 120, 84, 72, 84, 84]
 
 
 class RxTxWindow(BaseDockWindow):
@@ -409,6 +435,9 @@ class RxTxWindow(BaseDockWindow):
         self._rx_model = rx_model
         self._tx_model = tx_model
         self._connection_model = connection_model
+        self._rx_width_ratios = self._width_ratios(_DEFAULT_RX_WIDTHS)
+        self._tx_width_ratios = self._width_ratios(_DEFAULT_TX_WIDTHS)
+        self._conn_width_ratios = self._width_ratios(_DEFAULT_CONN_WIDTHS)
 
         # RX Toolbar
         toolbar = QToolBar()
@@ -450,14 +479,14 @@ class RxTxWindow(BaseDockWindow):
         self._rx_view.setAlternatingRowColors(True)
         self._rx_view.setModel(self._rx_proxy)
         self._rx_view.setSortingEnabled(True)
-        self._rx_view.header().setStretchLastSection(True)
+        self._rx_view.header().setStretchLastSection(False)
         self._rx_view.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._rx_view.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
         self._rx_view.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
         self._rx_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._rx_view.customContextMenuRequested.connect(self._rx_context_menu)
         self._rx_view.setItemDelegateForColumn(6, _HexFontDelegate(self._rx_view))
-        self._set_default_widths(self._rx_view)
+        self._set_default_widths(self._rx_view, _DEFAULT_RX_WIDTHS)
         rx_layout.addWidget(self._rx_view)
         self._splitter.addWidget(rx_container)
 
@@ -525,7 +554,7 @@ class RxTxWindow(BaseDockWindow):
         self._tx_view.setAlternatingRowColors(True)
         self._tx_view.setModel(self._tx_proxy)
         self._tx_view.setSortingEnabled(True)
-        self._tx_view.header().setStretchLastSection(True)
+        self._tx_view.header().setStretchLastSection(False)
         self._tx_view.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._tx_view.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
         self._tx_view.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
@@ -539,7 +568,7 @@ class RxTxWindow(BaseDockWindow):
         self._tx_view.setDropIndicatorShown(True)
         self._tx_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._tx_view.customContextMenuRequested.connect(self._tx_context_menu)
-        self._set_default_widths(self._tx_view)
+        self._set_default_widths(self._tx_view, _DEFAULT_TX_WIDTHS)
         tx_layout.addWidget(self._tx_view)
         self._splitter.addWidget(tx_container)
 
@@ -576,7 +605,7 @@ class RxTxWindow(BaseDockWindow):
         self._conn_view.setAlternatingRowColors(True)
         self._conn_view.setModel(self._connection_model)
         self._conn_view.setItemDelegateForColumn(4, InterfaceDelegate(self._conn_view))
-        self._conn_view.header().setStretchLastSection(True)
+        self._conn_view.header().setStretchLastSection(False)
         self._conn_view.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._conn_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._conn_view.customContextMenuRequested.connect(self._conn_context_menu)
@@ -599,6 +628,12 @@ class RxTxWindow(BaseDockWindow):
         self._click_filter = _ClickOutsideFilter(
             self, [self._rx_view, self._tx_view, self._conn_view], self)
         QApplication.instance().installEventFilter(self._click_filter)
+        QTimer.singleShot(0, self._apply_proportional_widths_all)
+
+    def resizeEvent(self, event):
+        """Reapply proportional column widths when this panel is resized."""
+        super().resizeEvent(event)
+        self._apply_proportional_widths_all()
 
     @property
     def splitter(self) -> QSplitter:
@@ -630,7 +665,7 @@ class RxTxWindow(BaseDockWindow):
         return [self._rx_view, self._tx_view, self._conn_view]
 
     @staticmethod
-    def _set_default_widths(view: QTreeView, widths: list[int] = _DEFAULT_WIDTHS):
+    def _set_default_widths(view: QTreeView, widths: list[int]):
         """Apply initial column widths to a tree view header.
 
         Iterates over *widths* and resizes each corresponding header section.
@@ -646,6 +681,31 @@ class RxTxWindow(BaseDockWindow):
         for i, width in enumerate(widths):
             if i < header.count():
                 header.resizeSection(i, width)
+
+    @staticmethod
+    def _width_ratios(widths: list[int]) -> list[float]:
+        """Convert absolute widths into normalized per-column ratios."""
+        total = sum(widths) or 1
+        return [w / total for w in widths]
+
+    def _apply_proportional_widths_all(self):
+        """Apply proportional widths for RX, TX, and Connections views."""
+        self._apply_proportional_widths(self._rx_view, self._rx_width_ratios)
+        self._apply_proportional_widths(self._tx_view, self._tx_width_ratios)
+        self._apply_proportional_widths(self._conn_view, self._conn_width_ratios)
+
+    @staticmethod
+    def _apply_proportional_widths(view: QTreeView, ratios: list[float]):
+        """Resize columns by ratios so they track current viewport width."""
+        header = view.header()
+        count = min(header.count(), len(ratios))
+        available = view.viewport().width()
+        if count <= 0 or available <= 0:
+            return
+        widths = [int(available * ratios[i]) for i in range(count)]
+        widths[-1] += available - sum(widths)
+        for i, width in enumerate(widths):
+            header.resizeSection(i, max(16, width))
 
     def send_space_pressed(self):
         """Send selected TX messages once (invoked by the Space key via FocusManager)."""
@@ -669,8 +729,9 @@ class RxTxWindow(BaseDockWindow):
         :class:`~cangui.can_message.CanMessage` instance.
 
         Args:
-            callback: A callable with the signature ``callback(msg)`` where
-                *msg* is a :class:`~cangui.can_message.CanMessage`.
+            callback: A callable with the signature ``callback(msg) -> bool``
+                where *msg* is a :class:`~cangui.can_message.CanMessage` and
+                the return value indicates transport success.
         """
         self._send_once_callback = callback
 
@@ -955,8 +1016,8 @@ class RxTxWindow(BaseDockWindow):
                     bus=item.bus,
                     row=row,
                 )
-                self._send_once_callback(msg)
-                self._tx_model.increment_count(row)
+                if self._send_once_callback(msg):
+                    self._tx_model.increment_count(row)
 
     def _tx_context_menu(self, pos):
         """Show a context menu for the TX view."""
