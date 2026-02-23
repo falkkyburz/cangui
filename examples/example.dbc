@@ -6,6 +6,9 @@ BS_:
 
 BU_: ECU1 ECU2
 
+VAL_TABLE_ LightStateVT 0 "Off" 1 "Parking" 2 "LowBeam" 3 "Auto";
+VAL_TABLE_ TurnSignalVT 0 "Off" 1 "Left" 2 "Right" 3 "Reserved";
+
 BO_ 256 EngineData: 8 ECU1
  SG_ EngineSpeed : 0|16@1+ (0.25,0) [0|16383.75] "rpm" ECU2
  SG_ EngineTemp : 16|8@1+ (1,-40) [-40|215] "degC" ECU2
@@ -109,6 +112,11 @@ BO_ 1280 BitMatrix: 8 ECU1
  SG_ Voltage : 16|16@1+ (0.001,0) [0|65.535] "V" ECU2
  SG_ E2E_Counter : 36|4@1+ (1,0) [0|14] "" ECU2
  SG_ E2E_CRC : 40|8@1+ (1,0) [0|255] "" ECU2
+
+VAL_ 1024 Headlights 0 "Off" 1 "Parking" 2 "LowBeam" 3 "Auto";
+VAL_ 1024 TurnSignal 0 "Off" 1 "Left" 2 "Right" 3 "Reserved";
+VAL_ 1024 HazardLights 0 "Inactive" 1 "Active";
+VAL_ 1024 HighBeam 0 "Off" 1 "On";
 
 CM_ BO_ 256 "Engine sensor data at 100ms cycle";
 CM_ BO_ 512 "Vehicle speed and odometer";

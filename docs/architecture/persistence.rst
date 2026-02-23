@@ -39,7 +39,7 @@ ProjectData field inventory
      - Paths to DBC/KCD/ODX files
      - Portable paths (see below)
    * - ``trace_files``
-     - Paths to TRC/BLF trace recordings
+     - Paths to trace recordings (internal ``.ctb`` plus imported/exported TRC/BLF)
      - Portable paths
    * - ``plot_files``
      - Paths to plot trace recordings

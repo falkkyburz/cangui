@@ -170,6 +170,10 @@ class TxSignalValueDelegate(QStyledItemDelegate):
                 editor.setCurrentIndex(idx)
             else:
                 editor.setEditText(current_str)
+            line_edit = editor.lineEdit()
+            if line_edit is not None:
+                # Pre-select the whole value so typing immediately replaces it.
+                QTimer.singleShot(0, line_edit.selectAll)
         else:
             super().setEditorData(editor, index)
 

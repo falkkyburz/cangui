@@ -92,12 +92,12 @@ Timer interval table
      - Decodes signals on flush
    * - ``TraceModel`` (fast)
      - Convert pending to ``TraceEntry``; hand off to disk writer
-     - 50 ms
-     - Does **not** update the view model
+     - 100 ms
+     - Appends to trace store and stages rows
    * - ``TraceModel`` (slow)
-     - Commit staged entries to view; emit ``dataChanged``
-     - 200 ms
-     - Batches ``beginInsertRows`` / ``endInsertRows`` calls
+     - Commit staged entries to view; emit row inserts
+     - 100 ms
+     - Rows are virtualized; old rows are read on demand from disk
    * - ``PlotDataService``
      - Flush pending messages; trim rolling window
      - 50 ms

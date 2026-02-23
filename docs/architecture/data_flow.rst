@@ -32,11 +32,12 @@ End-to-end RX flow
              │            │             │              │
              ▼            ▼             ▼              ▼
         RxMessageModel  WatchModel  TraceModel  PlotDataService
-          (50+200 ms)   (100 ms)   (50+200 ms)   (50 ms)
+          (50+200 ms)   (100 ms)   (100+100 ms)  (50 ms)
                                        │              │
                                        ▼              ▼
                                   _DiskWriterThread  PlotWindow
-                                  (SimpleQueue)      (50 ms render)
+                                  + Ring Buffer      (50 ms render)
+                                  + Trace Store
 
 
 Dual dispatch paths

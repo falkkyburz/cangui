@@ -132,6 +132,8 @@ class TraceWindow(BaseDockWindow):
         """
         super().__init__(parent)
         self._model = model
+        self._bottom_threshold_rows = 200
+        self._suppress_scroll_events = False
 
         # Sort/filter proxy — wraps the raw TraceModel
         self._proxy = _TraceSortProxy(self)
@@ -225,6 +227,7 @@ class TraceWindow(BaseDockWindow):
             header.resizeSection(col, width)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_context_menu)
+        self._table.verticalScrollBar().valueChanged.connect(self._on_scroll_changed)
         self._layout.addWidget(self._table)
 
         # Auto-scroll on new rows
@@ -241,6 +244,10 @@ class TraceWindow(BaseDockWindow):
         self._rate_label = QLabel("")
         self._rate_label.setStyleSheet("color: gray;")
         self._status_layout.addWidget(self._rate_label)
+        self._status_layout.addStretch()
+        self._mode_label = QLabel("Live")
+        self._mode_label.setStyleSheet("color: #1f7a1f;")
+        self._status_layout.addWidget(self._mode_label)
         self._status_layout.addStretch()
         self._state_label = QLabel()
         self._status_layout.addWidget(self._state_label)
@@ -311,6 +318,8 @@ class TraceWindow(BaseDockWindow):
         """
         self._update_button_state(recording)
         self._set_state("Recording" if recording else "Stopped")
+        if recording:
+            self._switch_to_live_mode()
 
     def _on_stop(self):
         """Stop live recording and reset toolbar and status label."""
@@ -354,10 +363,13 @@ class TraceWindow(BaseDockWindow):
     def _on_entries_committed(self):
         """Refresh the message-count label."""
         self._count_label.setText(f"Messages: {self._model.message_count}")
+        if self._model.live_mode:
+            self._scroll_to_bottom()
 
     def _on_model_reset(self):
         """Refresh the message-count label after the model is fully reset."""
         self._count_label.setText(f"Messages: {self._model.message_count}")
+        self._switch_to_live_mode()
 
     def _on_file_changed(self, path: str):
         """Update the toolbar file-name label when the active trace file changes.
@@ -411,6 +423,47 @@ class TraceWindow(BaseDockWindow):
                 text = str(model.data(cell) or "")
                 parts.append(text)
             QApplication.clipboard().setText("  ".join(parts))
+
+    def _scroll_to_bottom(self):
+        self._suppress_scroll_events = True
+        try:
+            self._table.scrollToBottom()
+        finally:
+            self._suppress_scroll_events = False
+
+    def _remaining_rows_to_bottom(self) -> int:
+        model = self._table.model()
+        if model is None:
+            return 0
+        total = model.rowCount()
+        if total <= 0:
+            return 0
+        bottom_row = self._table.rowAt(self._table.viewport().height() - 1)
+        if bottom_row < 0:
+            bottom_row = total - 1
+        return max(0, (total - 1) - bottom_row)
+
+    def _switch_to_live_mode(self):
+        self._model.set_live_mode(True)
+        self._mode_label.setText("Live")
+        self._mode_label.setStyleSheet("color: #1f7a1f;")
+        self._scroll_to_bottom()
+
+    def _switch_to_scroll_mode(self):
+        self._model.set_live_mode(False)
+        self._mode_label.setText("Scroll")
+        self._mode_label.setStyleSheet("color: #a06a00;")
+
+    def _on_scroll_changed(self, _value: int):
+        if self._suppress_scroll_events:
+            return
+        remaining = self._remaining_rows_to_bottom()
+        if remaining <= self._bottom_threshold_rows:
+            if not self._model.live_mode:
+                self._switch_to_live_mode()
+            return
+        if self._model.live_mode:
+            self._switch_to_scroll_mode()
 
     def set_replay_state(self, playing: bool):
         """Update the status label to reflect the current replay state.

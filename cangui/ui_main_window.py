@@ -1100,7 +1100,7 @@ class MainWindow(QMainWindow):
     def _trace_stop(self):
         """Stop the active trace recording."""
         self._trace_model.stop()
-        self._trace_win._on_stop()
+        self._trace_win.set_recording_state(False)
 
     def _sync_trace_folder(self):
         """Update the trace model's output folder from the current project path."""
@@ -1113,12 +1113,11 @@ class MainWindow(QMainWindow):
             self._project_win.refresh()
 
     def _save_trace(self, path: str):
-        """Export the current display buffer to a trace file."""
-        self._trace_model.flush_all()
+        """Export all captured trace rows to a trace file."""
         fmt = TraceFormat(detect_trace_format(path))
         writer = create_trace_writer(path, fmt)
         writer.open()
-        for entry in self._trace_model.entries:
+        for entry in self._trace_model.iter_all_entries():
             msg = CanMessage(
                 arbitration_id=entry.can_id,
                 data=entry.data,
@@ -1142,8 +1141,7 @@ class MainWindow(QMainWindow):
             path: Absolute path to the trace file to replay.
         """
         reader = TraceReader(path)
-        reader.load()
-        if not reader.entries:
+        if not reader.has_entries():
             return
         # Stop any existing replay
         if self._trace_player is not None:

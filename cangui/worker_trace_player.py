@@ -87,17 +87,14 @@ class TracePlayer(QThread):
         Emits :attr:`finished_playback` unconditionally when the loop ends
         (normal completion or stop request).
         """
-        entries = self._reader.entries
-        if not entries:
-            self.finished_playback.emit()
-            return
-
         self._running = True
         self._paused = False
         wall_start = time.monotonic()
-        trace_start = entries[0].time_offset
+        trace_start = None
 
-        for entry in entries:
+        had_entries = False
+        for entry in self._reader.iter_entries():
+            had_entries = True
             if not self._running:
                 break
             while self._paused and self._running:
@@ -105,6 +102,8 @@ class TracePlayer(QThread):
             if not self._running:
                 break
 
+            if trace_start is None:
+                trace_start = entry.time_offset
             trace_elapsed = entry.time_offset - trace_start
             if self._speed > 0 and self._speed < 100:
                 target_wall = wall_start + trace_elapsed / self._speed
@@ -119,4 +118,7 @@ class TracePlayer(QThread):
             self.message_played.emit(entry.message, entry.direction)
             self.progress_changed.emit(entry.time_offset)
 
+        if not had_entries:
+            self.finished_playback.emit()
+            return
         self.finished_playback.emit()

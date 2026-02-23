@@ -1,21 +1,19 @@
-"""Qt table model for the CAN trace view with background disk-writing support.
+"""Qt trace model with append-only storage + virtualized row access.
 
-Captured CanMessage objects pass through a two-stage pipeline:
+Architecture:
 
-1. A 50 ms batch timer (_batch_timer) drains _pending into TraceEntry objects
-   and hands them to _staged.  All disk I/O is delegated non-blocking to
-   _DiskWriterThread via a SimpleQueue.
-2. A periodic view timer (_view_timer) refreshes the on-screen table with only
-   the most recent rows from _staged.
-
-The deque has a hard cap of DISPLAY_BUFFER_SIZE rows; older entries are dropped
-automatically once the buffer is full.
+- Incoming CAN messages are batched on the GUI thread.
+- A background disk thread appends fixed-size records to a trace store file.
+- The model keeps only a fixed-size ring buffer in RAM for live view.
+- Older rows are read on demand from disk through a paged reader cache.
 """
+
+from __future__ import annotations
 
 import queue as _stdlib_queue
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -23,24 +21,13 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QTimer, Signal, QThread
 
 from cangui.can_message import CanMessage
-from cangui.trace_writer import TraceWriter, TraceFormat, create_trace_writer
+from cangui.trace_store import TraceStoreReader, TraceStoreWriter
+from cangui.trace_writer import TraceFormat
 
 
-@dataclass
+@dataclass(frozen=True)
 class TraceEntry:
-    """Immutable snapshot of a single CAN frame as displayed in the trace table.
-
-    Attributes:
-        number: Sequential frame counter starting at 1 for each recording session.
-        timestamp: Relative timestamp in seconds from the first frame in the session.
-        bus: Bus channel number the frame was captured on.
-        can_id: CAN arbitration ID.
-        is_extended_id: True when the frame uses a 29-bit extended ID.
-        direction: Receive/transmit direction string, e.g. ``"Rx"`` or ``"Tx"``.
-        frame_type: Frame type string, e.g. ``"Data"`` or ``"Remote"``.
-        dlc: Data Length Code as reported by the hardware.
-        data: Raw payload bytes.
-    """
+    """Immutable snapshot of one CAN frame as displayed in the trace table."""
 
     number: int
     timestamp: float
@@ -55,121 +42,71 @@ class TraceEntry:
 
 COLUMNS = ["#", "Time", "Bus", "ID (hex)", "Dir", "Type", "DLC", "Data (hex)"]
 
-DISPLAY_BUFFER_SIZE = 100
-MAX_FILE_SIZE = 1_000_000_000  # 1 GB
-VIEW_UPDATE_INTERVAL_MS = 250
+RING_BUFFER_SIZE = 10_000
+PAGE_SIZE = 1_024
+PAGE_CACHE_LIMIT = 24
+VIEW_UPDATE_INTERVAL_MS = 100
 
 
 class _DiskWriterThread(QThread):
-    """Background thread: owns the trace file and handles all disk I/O.
+    """Background thread that owns trace-store file I/O."""
 
-    The main thread hands off messages via a lock-free queue and never
-    touches the file directly, so disk latency cannot stall the UI.
-    """
-
-    file_changed = Signal(str)  # emitted from this thread; Qt queues delivery to main thread
+    file_changed = Signal(str)
 
     def __init__(self, parent=None):
-        """Initialise the thread and create the internal command queue.
-
-        Args:
-            parent: Optional Qt parent object.
-        """
         super().__init__(parent)
         self._q: _stdlib_queue.SimpleQueue = _stdlib_queue.SimpleQueue()
 
-    # -- Commands called from the main thread (non-blocking) --
+    def cmd_start(self, folder: Path, _fmt: TraceFormat, base_name: str):
+        self._q.put(("start", folder, base_name))
 
-    def cmd_start(self, folder: Path, fmt: TraceFormat, base_name: str):
-        """Open a new trace file and begin writing.
-
-        Args:
-            folder: Directory in which the trace file will be created.
-            fmt: Trace file format (e.g. TRC or BLF).
-            base_name: Base file name without extension; a timestamp is
-                recommended so recordings do not overwrite each other.
-        """
-        self._q.put(("start", folder, fmt, base_name))
-
-    def cmd_write(self, msg: CanMessage, direction: str):
-        """Enqueue a single CAN frame for writing to the current trace file.
-
-        Args:
-            msg: The CAN message to write.
-            direction: Direction string, e.g. ``"Rx"`` or ``"Tx"``.
-        """
-        self._q.put(("write", msg, direction))
+    def cmd_write(self, entry: TraceEntry):
+        self._q.put(("write", entry))
 
     def cmd_stop(self):
-        """Close the current trace file without stopping the thread."""
         self._q.put(("stop",))
 
     def cmd_sync(self):
-        """Block the calling thread until all prior commands have been processed."""
         event = threading.Event()
         self._q.put(("sync", event))
         event.wait(timeout=10.0)
 
     def cmd_quit(self):
-        """Flush pending writes, close the file, and stop the thread.
-
-        Blocks the calling thread for up to 5 seconds waiting for the worker
-        thread to exit cleanly.
-        """
         self._q.put(("quit",))
         self.wait(5000)
 
-    # -- Thread body --
-
     def run(self):
-        """Execute the disk-writer event loop; runs on the background thread.
-
-        Processes command tuples from the queue in order.  Supported operations
-        are ``start``, ``write``, ``stop``, ``sync``, and ``quit``.  The loop
-        exits when a ``quit`` command is received.
-        """
-        writer: TraceWriter | None = None
-        file_index = 0
-        base_name = ""
-        trace_folder: Path | None = None
-        trace_format = TraceFormat.TRC
+        writer: TraceStoreWriter | None = None
 
         while True:
             item = self._q.get()
             op = item[0]
 
-            if op == "write":
-                if writer is None:
-                    continue
-                _, msg, direction = item
-                if writer.file_size >= MAX_FILE_SIZE:
-                    writer.close()
-                    file_index += 1
-                    path = trace_folder / f"{base_name}_{file_index:03d}.{trace_format.value}"
-                    writer = create_trace_writer(path, trace_format)
-                    writer.open()
-                    self.file_changed.emit(str(path))
-                writer.write(msg, direction=direction)
-
-            elif op == "start":
-                _, trace_folder, trace_format, base_name = item
+            if op == "start":
+                _, folder, base_name = item
                 if writer is not None:
                     writer.close()
-                file_index = 0
-                trace_folder.mkdir(parents=True, exist_ok=True)
-                path = trace_folder / f"{base_name}.{trace_format.value}"
-                writer = create_trace_writer(path, trace_format)
+                folder.mkdir(parents=True, exist_ok=True)
+                path = folder / f"{base_name}.ctb"
+                writer = TraceStoreWriter(path)
                 writer.open()
                 self.file_changed.emit(str(path))
+
+            elif op == "write":
+                if writer is None:
+                    continue
+                _, entry = item
+                writer.append_entry(entry)
 
             elif op == "stop":
                 if writer is not None:
                     writer.close()
                     writer = None
-                self.file_changed.emit("")
 
             elif op == "sync":
                 _, event = item
+                if writer is not None:
+                    writer.flush()
                 event.set()
 
             elif op == "quit":
@@ -179,98 +116,76 @@ class _DiskWriterThread(QThread):
 
 
 class TraceModel(QAbstractTableModel):
-    """Qt table model that captures every CAN frame and renders it as a table row.
+    """Virtualized trace table model backed by ring buffer + trace store."""
 
-    Received messages are collected in a _pending list on the main thread.
-    A 50 ms _batch_timer converts _pending entries into TraceEntry objects
-    (draining into _staged) and hands disk writes to _DiskWriterThread.
-    A periodic _view_timer refreshes the display deque from _staged, keeping
-    only a small latest-row window visible in the table.
-
-    Signals:
-        file_changed (str): Emitted when the active trace file path changes.
-            An empty string means recording has stopped.
-        entries_committed: Emitted each time staged entries are committed to
-            the display deque.
-        rate_updated (int): Emitted approximately every second with the current
-            receive rate in messages per second.
-    """
-
-    file_changed = Signal(str)      # current trace file path (or "" when closed)
-    entries_committed = Signal()    # emitted after staged entries are committed to display
-    rate_updated = Signal(int)      # messages per second
+    file_changed = Signal(str)
+    entries_committed = Signal()
+    rate_updated = Signal(int)
 
     def __init__(self, parent=None):
-        """Initialise the model, start the disk-writer thread and both timers.
-
-        Args:
-            parent: Optional Qt parent object.
-        """
         super().__init__(parent)
-        self._entries: deque[TraceEntry] = deque(maxlen=DISPLAY_BUFFER_SIZE)
-        # Staging deque: TraceEntry objects waiting to be committed to the display model.
-        # deque avoids O(n) front-deletes when the UI is behind.
+
+        # RAM live cache: absolute row index -> entry
+        self._ring: deque[tuple[int, TraceEntry]] = deque()
+        self._ring_map: dict[int, TraceEntry] = {}
+
+        # On-demand page cache for disk-backed rows
+        self._page_cache: OrderedDict[int, list[TraceEntry]] = OrderedDict()
+
         self._staged: deque[TraceEntry] = deque()
-        self._msg_number = 0
-        self._start_time: float | None = None
         self._pending: list[CanMessage] = []
         self._pending_directions: list[str] = []
-        self._recording = False
 
-        # Trace settings (set before start() is called)
+        self._recording = False
+        self._live_mode = True
+
+        self._msg_number = 0
+        self._start_time: float | None = None
+        self._total_rows = 0
+
         self._trace_folder: Path | None = None
         self._trace_format = TraceFormat.TRC
         self._current_file: str = ""
+        self._store_reader: TraceStoreReader | None = None
 
-        # Background disk-writer thread
         self._disk_thread = _DiskWriterThread(self)
         self._disk_thread.file_changed.connect(self._on_disk_file_changed)
         self._disk_thread.start()
 
-        # Fast timer: convert pending messages to TraceEntry objects (data capture)
         self._batch_timer = QTimer(self)
         self._batch_timer.setInterval(100)
         self._batch_timer.timeout.connect(self._flush)
         self._batch_timer.start()
 
-        # View timer: periodically refresh the on-screen window.
         self._view_timer = QTimer(self)
         self._view_timer.setInterval(VIEW_UPDATE_INTERVAL_MS)
         self._view_timer.timeout.connect(self._commit_staged)
         self._view_timer.start()
 
-        # Rate tracking
         self._rate_count = 0
         self._rate_window_start = time.monotonic()
 
     def _on_disk_file_changed(self, path: str):
-        """Relay the disk-writer thread's file_changed signal to model consumers.
-
-        Args:
-            path: New active trace file path, or ``""`` when the file is closed.
-        """
         self._current_file = path
+        self._store_reader = TraceStoreReader(path) if path else None
+        self._page_cache.clear()
         self.file_changed.emit(path)
 
     @property
     def recording(self) -> bool:
-        """True while the model is actively capturing incoming messages."""
         return self._recording
 
-    def set_trace_folder(self, folder: Path | None):
-        """Set the directory where new trace files will be written.
+    @property
+    def live_mode(self) -> bool:
+        return self._live_mode
 
-        Args:
-            folder: Target directory, or ``None`` to disable file recording.
-        """
+    def set_live_mode(self, enabled: bool):
+        self._live_mode = enabled
+
+    def set_trace_folder(self, folder: Path | None):
         self._trace_folder = folder
 
     def set_trace_format(self, fmt: str):
-        """Set the trace file format by name, falling back to TRC on unknown values.
-
-        Args:
-            fmt: Format identifier string, e.g. ``"trc"`` or ``"blf"``.
-        """
         try:
             self._trace_format = TraceFormat(fmt)
         except ValueError:
@@ -278,116 +193,96 @@ class TraceModel(QAbstractTableModel):
 
     @property
     def current_file(self) -> str:
-        """Absolute path of the currently open trace file, or ``""`` if none."""
         return self._current_file
-
-    def flush_all(self):
-        """Flush all pending/staged data into entries (call before iterating entries)."""
-        self._flush()
-        self._commit_staged()
-
-    def flush_disk(self):
-        """Block until all pending disk writes have completed."""
-        self._disk_thread.cmd_sync()
 
     @property
     def message_count(self) -> int:
-        """Total number of frames captured since the last clear(), including staged ones."""
-        return self._msg_number
+        return self._total_rows
 
-    @property
-    def entries(self) -> deque[TraceEntry]:
-        """Live deque of committed TraceEntry objects currently visible in the table."""
-        return self._entries
+    def flush_all(self):
+        self._flush()
+        self._commit_staged()
+        self.flush_disk()
+
+    def flush_disk(self):
+        self._disk_thread.cmd_sync()
 
     def start(self):
-        """Begin capturing a fresh session and open a new trace file if configured.
-
-        Starting always resets the in-memory display/session state so message
-        count and relative timestamps restart at zero for the new recording.
-        """
         self.beginResetModel()
-        self._entries.clear()
+        self._ring.clear()
+        self._ring_map.clear()
+        self._page_cache.clear()
         self._staged.clear()
         self._pending.clear()
         self._pending_directions.clear()
         self._msg_number = 0
+        self._total_rows = 0
         self._start_time = None
+        self._current_file = ""
+        self._store_reader = None
         self.endResetModel()
+        self.file_changed.emit("")
 
-        # Reset rate tracking for the new session.
         self._rate_count = 0
         self._rate_window_start = time.monotonic()
         self.rate_updated.emit(0)
 
         self._recording = True
+        self._live_mode = True
         if self._trace_folder is not None:
             base_name = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
             self._disk_thread.cmd_start(self._trace_folder, self._trace_format, base_name)
 
     def stop(self):
-        """Stop capturing, flush pending data, and close the trace file."""
         self._recording = False
-        self._flush()           # drain _pending → disk queue + _staged
-        self._disk_thread.cmd_stop()  # queued after all write commands
+        self._flush()
+        self._commit_staged()
+        self._disk_thread.cmd_stop()
 
     def shutdown(self):
-        """Stop the background disk-writer thread. Call once on application exit."""
         self._batch_timer.stop()
         self._view_timer.stop()
         self._flush()
+        self._commit_staged()
         self._disk_thread.cmd_quit()
 
     def clear(self):
-        """Discard all entries, reset the frame counter, and notify the view."""
         self.beginResetModel()
-        self._entries.clear()
+        self._ring.clear()
+        self._ring_map.clear()
+        self._page_cache.clear()
         self._staged.clear()
-        self._msg_number = 0
-        self._start_time = None
         self._pending.clear()
         self._pending_directions.clear()
+        self._msg_number = 0
+        self._total_rows = 0
+        self._start_time = None
+        self._current_file = ""
+        self._store_reader = None
         self.endResetModel()
+        self.file_changed.emit("")
 
     def on_message(self, msg: CanMessage, direction: str = "Rx"):
-        """Enqueue a single CAN message for capture; ignored if not recording.
-
-        Args:
-            msg: The incoming CAN message.
-            direction: Direction label, defaults to ``"Rx"``.
-        """
         if not self._recording:
             return
         self._pending.append(msg)
         self._pending_directions.append(direction)
 
     def on_messages(self, messages: list[CanMessage]):
-        """Enqueue a batch of received CAN messages; ignored if not recording.
-
-        Args:
-            messages: List of CAN messages, all tagged as ``"Rx"``.
-        """
         if not self._recording:
             return
         self._pending.extend(messages)
         self._pending_directions.extend("Rx" for _ in messages)
 
-    # -- Batching / view updates --
-
     def _flush(self):
-        """Fast timer (50ms): convert pending CAN messages to TraceEntry objects.
-
-        All disk I/O is handed off to _DiskWriterThread via a non-blocking queue,
-        so this method never blocks the main thread on file operations.
-        """
         if not self._pending:
             return
+
         batch = self._pending
         directions = self._pending_directions
         self._pending = []
         self._pending_directions = []
 
-        # Rate tracking
         now = time.monotonic()
         self._rate_count += len(batch)
         elapsed = now - self._rate_window_start
@@ -411,101 +306,131 @@ class TraceModel(QAbstractTableModel):
                 dlc=msg.dlc,
                 data=msg.data,
             )
-            # Hand off to the disk writer thread — non-blocking.
-            self._disk_thread.cmd_write(msg, direction)
+            self._disk_thread.cmd_write(entry)
             self._staged.append(entry)
 
+    def _append_ring(self, row_index: int, entry: TraceEntry):
+        if len(self._ring) >= RING_BUFFER_SIZE:
+            old_row, _ = self._ring.popleft()
+            self._ring_map.pop(old_row, None)
+        self._ring.append((row_index, entry))
+        self._ring_map[row_index] = entry
+
     def _commit_staged(self):
-        """Slow timer: keep only the latest rows and refresh the table periodically."""
         if not self._staged:
             return
-        # Keep only the most recent staged rows for rendering; older rows are
-        # still written to trace file by the disk writer.
-        excess = len(self._staged) - DISPLAY_BUFFER_SIZE
-        if excess > 0:
-            for _ in range(excess):
-                self._staged.popleft()
 
         staged = list(self._staged)
         self._staged.clear()
 
-        self.beginResetModel()
-        self._entries.extend(staged)
-        self.endResetModel()
+        start_row = self._total_rows
+        end_row = start_row + len(staged) - 1
+
+        for i, entry in enumerate(staged):
+            self._append_ring(start_row + i, entry)
+
+        self.beginInsertRows(QModelIndex(), start_row, end_row)
+        self._total_rows += len(staged)
+        self.endInsertRows()
+
+        # Last page may have changed in-place due to appends.
+        if self._total_rows > 0:
+            last_page = (self._total_rows - 1) // PAGE_SIZE
+            self._page_cache.pop(last_page, None)
 
         self.entries_committed.emit()
 
-    # -- QAbstractTableModel interface --
+    def _get_page(self, page_index: int) -> list[TraceEntry]:
+        cached = self._page_cache.get(page_index)
+        if cached is not None:
+            self._page_cache.move_to_end(page_index)
+            return cached
+
+        reader = self._store_reader
+        if reader is None:
+            return []
+
+        start = page_index * PAGE_SIZE
+        try:
+            page = reader.read_range(start, PAGE_SIZE)
+        except (OSError, ValueError):
+            return []
+        self._page_cache[page_index] = page
+        self._page_cache.move_to_end(page_index)
+
+        while len(self._page_cache) > PAGE_CACHE_LIMIT:
+            self._page_cache.popitem(last=False)
+
+        return page
+
+    def _get_entry(self, row: int) -> TraceEntry | None:
+        cached = self._ring_map.get(row)
+        if cached is not None:
+            return cached
+
+        page_index = row // PAGE_SIZE
+        in_page = row % PAGE_SIZE
+        page = self._get_page(page_index)
+        if in_page < 0 or in_page >= len(page):
+            return None
+        return page[in_page]
+
+    def iter_all_entries(self):
+        self.flush_all()
+
+        if self._store_reader is not None:
+            try:
+                yield from self._store_reader.iter_entries()
+            except (OSError, ValueError):
+                return
+            return
+
+        for row, entry in self._ring:
+            if row < self._total_rows:
+                yield entry
 
     def rowCount(self, parent=QModelIndex()):
-        """Return the number of committed trace rows.
-
-        Args:
-            parent: Must be invalid for a flat table; returns 0 otherwise.
-        Returns:
-            Number of rows in the display deque.
-        """
         if parent.isValid():
             return 0
-        return len(self._entries)
+        return self._total_rows
 
     def columnCount(self, parent=QModelIndex()):
-        """Return the fixed number of trace columns.
-
-        Args:
-            parent: Unused for a flat table.
-        Returns:
-            Number of columns defined in COLUMNS.
-        """
         return len(COLUMNS)
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
-        """Return the column header label.
-
-        Args:
-            section: Column index.
-            orientation: Only horizontal orientation returns a value.
-            role: Only DisplayRole returns a value.
-        Returns:
-            Column name string, or None for unsupported combinations.
-        """
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
             return COLUMNS[section]
         return None
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
-        """Return display data for a trace cell.
-
-        Args:
-            index: Cell address within the model.
-            role: Only DisplayRole returns a non-None value.
-        Returns:
-            Formatted cell value as a string or int, or None for invalid cells.
-        """
         if not index.isValid() or role != Qt.ItemDataRole.DisplayRole:
             return None
         row = index.row()
-        if row < 0 or row >= len(self._entries):
+        if row < 0 or row >= self._total_rows:
             return None
-        entry = self._entries[row]
+
+        entry = self._get_entry(row)
+        if entry is None:
+            return None
+
         match index.column():
-            case 0: return entry.number
-            case 1: return f"{entry.timestamp:.3f}"
-            case 2: return entry.bus
-            case 3: return (f"{entry.can_id:08X}" if entry.is_extended_id
-                            else f"{entry.can_id:03X}")
-            case 4: return entry.direction
-            case 5: return entry.frame_type
-            case 6: return entry.dlc
-            case 7: return " ".join(f"{b:02X}" for b in entry.data)
+            case 0:
+                return entry.number
+            case 1:
+                return f"{entry.timestamp:.3f}"
+            case 2:
+                return entry.bus
+            case 3:
+                return f"{entry.can_id:08X}" if entry.is_extended_id else f"{entry.can_id:03X}"
+            case 4:
+                return entry.direction
+            case 5:
+                return entry.frame_type
+            case 6:
+                return entry.dlc
+            case 7:
+                return " ".join(f"{b:02X}" for b in entry.data)
         return None
 
     def flags(self, index: QModelIndex):
-        """Return item flags; trace rows are selectable but not editable.
-
-        Args:
-            index: Cell address within the model.
-        Returns:
-            ItemIsEnabled | ItemIsSelectable flags.
-        """
         return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
