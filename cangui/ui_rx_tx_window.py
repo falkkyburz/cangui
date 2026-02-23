@@ -1085,8 +1085,13 @@ class RxTxWindow(BaseDockWindow):
             watch_lbl = f"Add {n} signals to Watch"
             plot_lbl  = f"Add {n} signals to Plot"
 
-        menu.addAction(watch_lbl).triggered.connect(self._add_rx_to_watch)
-        menu.addAction(plot_lbl).triggered.connect(self._add_rx_to_plot)
+        watch_action = QAction(_icon("watch"), watch_lbl, self)
+        watch_action.triggered.connect(self._add_rx_to_watch)
+        menu.addAction(watch_action)
+
+        plot_action = QAction(_icon("plot"), plot_lbl, self)
+        plot_action.triggered.connect(self._add_rx_to_plot)
+        menu.addAction(plot_action)
         menu.exec(self._rx_view.viewport().mapToGlobal(pos))
 
     def _add_rx_to_watch(self):

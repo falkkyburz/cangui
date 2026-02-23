@@ -42,6 +42,7 @@ class ProjectWindow(BaseDockWindow):
     file_remove_requested = Signal(str, str)  # (path, category)
     import_file_requested = Signal(str)  # path
     open_in_database_requested = Signal(str)  # absolute file path
+    open_trace_requested = Signal(str)  # absolute trace file path
 
     def __init__(self, model: ProjectModel, parent=None):
         """Build the Project Manager panel with its toolbar and tree view.
@@ -111,7 +112,10 @@ class ProjectWindow(BaseDockWindow):
         self._view.expandAll()
         self._view.collapsed.connect(self._prevent_collapse)
         self._view.doubleClicked.connect(self._on_item_double_clicked)
-        self._view.setToolTip("Double-click a database file to open it in the Database editor")
+        self._view.setToolTip(
+            "Double-click a database file to open it in the Database editor.\n"
+            "Double-click a trace file to jump to the Trace tab."
+        )
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._on_context_menu)
         self._layout.addWidget(self._view)
@@ -123,10 +127,12 @@ class ProjectWindow(BaseDockWindow):
         return Path(node.path).suffix.lower() in (".dbc", ".kcd")
 
     def _on_item_double_clicked(self, index):
-        """Open a database file in the Database editor when double-clicked."""
+        """Open context-specific targets for leaf items on double-click."""
         node = self._model.get_node(index)
         if self._is_db_leaf(node):
             self.open_in_database_requested.emit(node.path)
+        elif node is not None and node.category == "trace" and node.path:
+            self.open_trace_requested.emit(node.path)
 
     def _on_open_in_database(self):
         """Emit open_in_database_requested for the currently selected database file."""

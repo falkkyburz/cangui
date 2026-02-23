@@ -173,3 +173,29 @@ resolved explicitly:
 
 * ``rxtx_plugin_file`` → ``script_plugin_file``
 * ``e2e_plugin_file``  → ``script_plugin_file``
+
+
+Future Consideration: Trace Segment Rollover
+--------------------------------------------
+
+For very long trace sessions, consider splitting internal trace storage
+into multiple fixed-size segment files instead of a single large ``.ctb``.
+
+Example segment set:
+
+.. code-block:: text
+
+    trace_000.ctb
+    trace_001.ctb
+    trace_002.ctb
+
+When a segment reaches a configured size limit, the logger rolls over to
+the next segment file.  A small index maps global row ranges to segment
+files so the UI can keep a single continuous row space.
+
+Why this is useful:
+
+* avoids very large single files
+* improves open/recovery behavior
+* limits corruption impact to one segment
+* simplifies long-session file management

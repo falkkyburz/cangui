@@ -249,6 +249,10 @@ class DatabaseWindow(BaseDockWindow):
         for col, width in _DB_COL_WIDTHS.items():
             header.resizeSection(col, width)
 
+    def _expand_top_level(self):
+        """Expand file-level rows so message rows are immediately visible."""
+        self._tree.expandToDepth(0)
+
     @property
     def primary_view(self):
         """The database tree view that receives keyboard focus."""
@@ -628,6 +632,7 @@ class DatabaseWindow(BaseDockWindow):
         self._model.import_from_cantools(db, filename=filename,
                                          source_path=path, append=True)
         self._resize_columns()
+        self._expand_top_level()
         self.dbc_imported.emit(path)
 
     def import_dbc_silent(self, path: str):
@@ -638,6 +643,7 @@ class DatabaseWindow(BaseDockWindow):
         self._model.import_from_cantools(db, filename=filename,
                                          source_path=path, append=True)
         self._resize_columns()
+        self._expand_top_level()
 
     def remove_dbc(self, path: str):
         """Remove the file-level database entry matching path."""
@@ -676,8 +682,10 @@ class DatabaseWindow(BaseDockWindow):
         """
         self._model.from_dict(data)
         self._resize_columns()
+        self._expand_top_level()
 
     def append_from_dict(self, data: list[dict]):
         """Append file entries from dict without clearing existing data."""
         self._model.append_from_dict(data)
         self._resize_columns()
+        self._expand_top_level()
