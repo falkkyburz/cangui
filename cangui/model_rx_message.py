@@ -58,6 +58,8 @@ class SignalItem:
         is_multiplexer: True when this signal is the mux selector for the message.
         multiplexer_ids: List of mux ID values this signal belongs to, or None
             when the signal is not multiplexed.
+        last_update: Monotonic timestamp of the most recent value change; used
+            for the 1.5 s fade-in highlight effect.
     """
 
     name: str = ""
@@ -65,6 +67,7 @@ class SignalItem:
     unit: str = ""
     is_multiplexer: bool = False
     multiplexer_ids: list[int] | None = None
+    last_update: float = -1000.0
 
 
 @dataclass
@@ -187,6 +190,12 @@ class RxMessageModel(QAbstractItemModel):
         self._stale_timer.setInterval(500)
         self._stale_timer.timeout.connect(self._check_stale)
         self._stale_timer.start()
+
+        # Signal highlight: repaint fading green within 1.5 s of a value change
+        self._highlight_timer = QTimer(self)
+        self._highlight_timer.setInterval(100)
+        self._highlight_timer.timeout.connect(self._refresh_signal_highlights)
+        self._highlight_timer.start()
 
     def set_decoder(self, decoder: SignalDecoder):
         """Replace the signal decoder used for symbol resolution and decoding.
@@ -376,6 +385,18 @@ class RxMessageModel(QAbstractItemModel):
                     return f"Last seen {elapsed:.1f} s ago"
             return None
 
+        if role == Qt.ItemDataRole.BackgroundRole:
+            if not self._is_top_level(index):
+                parent_row = index.internalId() - 1
+                if 0 <= parent_row < len(self._items):
+                    sigs = self._items[parent_row].signals
+                    if 0 <= index.row() < len(sigs):
+                        elapsed = time.monotonic() - sigs[index.row()].last_update
+                        if elapsed < 1.5:
+                            alpha = max(0, int(180 * (1.0 - elapsed / 1.5)))
+                            return QColor(100, 200, 100, alpha)
+            return None
+
         if role != Qt.ItemDataRole.DisplayRole:
             return None
 
@@ -517,15 +538,20 @@ class RxMessageModel(QAbstractItemModel):
         old_count = len(item.signals)
         new_count = len(new_signals)
 
+        now = time.monotonic()
         if old_count == new_count:
             for i, sig in enumerate(new_signals):
                 old = item.signals[i]
                 old.name = sig.name
+                if old.value != sig.value:
+                    old.last_update = now
                 old.value = sig.value
                 old.unit = sig.unit
                 old.is_multiplexer = sig.is_multiplexer
                 old.multiplexer_ids = sig.multiplexer_ids
         else:
+            for sig in new_signals:
+                sig.last_update = now
             item.signals = new_signals
 
     def _flush(self):
@@ -667,6 +693,41 @@ class RxMessageModel(QAbstractItemModel):
             # Also refresh signal children
             item = self._items[row]
             if item.signals:
+                parent_idx = self.index(row, 0)
+                self.dataChanged.emit(
+                    self.index(0, 0, parent_idx),
+                    self.index(len(item.signals) - 1, self.columnCount() - 1, parent_idx),
+                )
+
+    def clear_errors(self):
+        """Remove all error-frame rows from the model.
+
+        Called after a bus reset so that error frames are cleared while normal
+        message history is preserved.
+
+        Emits:
+            beginResetModel / endResetModel: Notifies attached views.
+        """
+        if not any(item.is_error_frame for item in self._items):
+            return
+        self.beginResetModel()
+        self._items = [item for item in self._items if not item.is_error_frame]
+        self._id_to_row = {(item.bus, item.can_id): i for i, item in enumerate(self._items)}
+        self.endResetModel()
+
+    def _refresh_signal_highlights(self):
+        """Periodic timer (100 ms): repaint signal rows whose highlight is still active.
+
+        Emits dataChanged for each parent row that has at least one signal with a
+        highlight younger than 1.5 s so the fade-in green effect updates smoothly.
+        """
+        if not self._items:
+            return
+        now = time.monotonic()
+        for row, item in enumerate(self._items):
+            if not item.signals:
+                continue
+            if any(now - sig.last_update < 1.5 for sig in item.signals):
                 parent_idx = self.index(row, 0)
                 self.dataChanged.emit(
                     self.index(0, 0, parent_idx),

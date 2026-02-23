@@ -41,6 +41,7 @@ class BusConfig:
     channel: str = "" if _IS_WINDOWS else "vcan0"
     bitrate: int = 500000
     fd: bool = False
+    listen_only: bool = False
     name: str = ""
     bus_number: int = 1
 
@@ -123,6 +124,7 @@ class CanBus:
             channel=self.config.channel,
             bitrate=self.config.bitrate,
             fd=self.config.fd,
+            listen_only=self.config.listen_only,
             receive_own_messages=self.config.is_virtual,
         )
 

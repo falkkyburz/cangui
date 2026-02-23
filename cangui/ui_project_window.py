@@ -95,14 +95,6 @@ class ProjectWindow(BaseDockWindow):
         copy_path_action.triggered.connect(self._copy_path)
         toolbar.addAction(copy_path_action)
 
-        toolbar.addSeparator()
-
-        self._open_db_action = QAction(_icon("database"), "Open in Database", self)
-        self._open_db_action.setToolTip("Open selected database file in the Database editor tab")
-        self._open_db_action.setEnabled(False)
-        self._open_db_action.triggered.connect(self._on_open_in_database)
-        toolbar.addAction(self._open_db_action)
-
         self._layout.addWidget(toolbar)
 
         self._view = QTreeView()
@@ -118,7 +110,8 @@ class ProjectWindow(BaseDockWindow):
 
         self._view.expandAll()
         self._view.collapsed.connect(self._prevent_collapse)
-        self._view.selectionModel().currentChanged.connect(self._on_selection_changed)
+        self._view.doubleClicked.connect(self._on_item_double_clicked)
+        self._view.setToolTip("Double-click a database file to open it in the Database editor")
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._on_context_menu)
         self._layout.addWidget(self._view)
@@ -129,10 +122,11 @@ class ProjectWindow(BaseDockWindow):
             return False
         return Path(node.path).suffix.lower() in (".dbc", ".kcd")
 
-    def _on_selection_changed(self, current, _previous):
-        """Enable/disable the Open in Database action based on the current node."""
-        node = self._model.get_node(current)
-        self._open_db_action.setEnabled(self._is_db_leaf(node))
+    def _on_item_double_clicked(self, index):
+        """Open a database file in the Database editor when double-clicked."""
+        node = self._model.get_node(index)
+        if self._is_db_leaf(node):
+            self.open_in_database_requested.emit(node.path)
 
     def _on_open_in_database(self):
         """Emit open_in_database_requested for the currently selected database file."""

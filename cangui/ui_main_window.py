@@ -50,6 +50,7 @@ from cangui.ui_log_window import LogWindow
 from cangui.ui_plot_list_window import PlotListWindow
 from cangui.ui_database_window import DatabaseWindow
 from cangui.script_plugin import ScriptPlugin
+from cangui import script_api
 from cangui.ui_focus_manager import FocusManager
 from cangui.service_workspace import WorkspaceService
 from cangui.worker_can_transmitter import CanTransmitter
@@ -187,39 +188,48 @@ class MainWindow(QMainWindow):
 
         # Focus manager
         self._focus = FocusManager(self)
-        self._focus.register("1", self._rx_tx_win, self._main_tabs, "Receive/Transmit")
-        self._focus.register("2", self._trace_win, self._main_tabs, "Trace")
-        self._focus.register("3", self._plot_win, self._main_tabs, "Plot")
+        self._focus.register("X", self._rx_tx_win, self._main_tabs, "Receive/Transmit")
+        self._focus.register("T", self._trace_win, self._main_tabs, "Trace")
+        self._focus.register("P", self._plot_win, self._main_tabs, "Plot")
         self._focus.register("4", self._diag_win, self._main_tabs, "Diagnostics")
         self._focus.register("D", self._database_win, self._main_tabs, "Database")
-        self._focus.register("5", self._project_win, self._small_tabs, "Project Manager")
+        self._focus.register("M", self._project_win, self._small_tabs, "Project Manager")
         self._focus.register("L", self._log_win, self._small_tabs, "Log")
-        self._focus.register("6", self._watch_win, self._list_tabs, "Watch")
+        self._focus.register("W", self._watch_win, self._list_tabs, "Watch")
         self._focus.register("7", self._watch_did_win, self._list_tabs, "Watch DID")
         self._focus.register("8", self._dtc_win, self._list_tabs, "DTC")
-        self._focus.register("9", self._rx_filter_win, self._list_tabs, "Rx Filter")
+        self._focus.register("F", self._rx_filter_win, self._list_tabs, "Rx Filter")
         self._focus.register("B", self._plot_list_win, self._list_tabs, "Plot List")
-        self._focus.register("A", self._settings_win, self._list_tabs, "Settings")
-        self._focus.register("0", self._help_win, self._list_tabs, "Help")
+        self._focus.register("S", self._settings_win, self._list_tabs, "Settings")
+        self._focus.register("H", self._help_win, self._list_tabs, "Help")
+        self._focus.set_space_action(
+            self._rx_tx_win._tx_view,
+            self._rx_tx_win.send_space_pressed,
+        )
         self._focus.install()
+
+        # Wire script log callback to the Log panel
+        script_api.set_log_callback(
+            lambda msg: self._log_win.append("Script", msg)
+        )
 
         # Populate help entries
         self._help_win.set_entries([
-            ("1", "Receive/Transmit", "Window switch"),
-            ("2", "Trace", "Window switch"),
-            ("3", "Plot", "Window switch"),
+            ("X", "Receive/Transmit", "Window switch"),
+            ("T", "Trace", "Window switch"),
+            ("P", "Plot", "Window switch"),
             ("4", "Diagnostics", "Window switch"),
             ("D", "Database", "Window switch"),
-            ("5", "Project Manager", "Window switch"),
+            ("M", "Project Manager", "Window switch"),
             ("L", "Log", "Window switch"),
-            ("6", "Watch", "Window switch"),
+            ("W", "Watch", "Window switch"),
             ("7", "Watch DID", "Window switch"),
             ("8", "DTC", "Window switch"),
-            ("9", "Rx Filter", "Window switch"),
+            ("F", "Rx Filter", "Window switch"),
             ("B", "Plot List", "Window switch"),
-            ("A", "Settings", "Window switch"),
-            ("0 / F1", "Help", "Window switch"),
-            ("Space", "Expand/collapse tree item", "Tree views"),
+            ("S", "Settings", "Window switch"),
+            ("H", "Help", "Window switch"),
+            ("Space", "Send selected TX frame (Wait mode) / expand/collapse tree", "RX/TX / Tree views"),
             ("F9", "Start trace", "Trace"),
             ("F6", "Stop trace", "Trace"),
             ("Shift+F9", "Start all tracers", "Trace"),
@@ -257,6 +267,7 @@ class MainWindow(QMainWindow):
         self._rx_tx_win.add_to_plot_requested.connect(self._add_signal_to_plot)
         self._rx_tx_win.add_connection_requested.connect(self._add_connection)
         self._rx_tx_win.reset_connections_requested.connect(self._can_service.reset)
+        self._rx_tx_win.reset_connections_requested.connect(self._rx_model.clear_errors)
         self._rx_tx_win.set_send_once_callback(self._send_message)
 
         self._diag_win = DiagnosticWindow(self._uds_service)
@@ -326,10 +337,10 @@ class MainWindow(QMainWindow):
         self._main_tabs = QTabWidget()
         self._main_tabs.setTabsClosable(False)
         self._main_tabs.setMovable(True)
-        self._main_tabs.addTab(self._rx_tx_win, "Receive/Transmit [1]")
+        self._main_tabs.addTab(self._rx_tx_win, "Receive/Transmit [X]")
         self._main_tabs.addTab(self._database_win, "Database [D]")
-        self._main_tabs.addTab(self._trace_win, "Trace [2]")
-        self._main_tabs.addTab(self._plot_win, "Plot [3]")
+        self._main_tabs.addTab(self._trace_win, "Trace [T]")
+        self._main_tabs.addTab(self._plot_win, "Plot [P]")
         self._main_tabs.addTab(self._diag_win, "Diagnostics [4]")
         self._h_splitter.addWidget(self._main_tabs)
 
@@ -340,7 +351,7 @@ class MainWindow(QMainWindow):
         self._small_tabs = QTabWidget()
         self._small_tabs.setTabsClosable(False)
         self._small_tabs.setMovable(True)
-        self._small_tabs.addTab(self._project_win, "Project Manager [5]")
+        self._small_tabs.addTab(self._project_win, "Project Manager [M]")
         self._small_tabs.addTab(self._log_win, "Log [L]")
         self._v_splitter.addWidget(self._small_tabs)
 
@@ -350,15 +361,15 @@ class MainWindow(QMainWindow):
         self._list_tabs.setMovable(True)
         self._list_tabs.setUsesScrollButtons(True)
         self._list_tabs.setElideMode(Qt.TextElideMode.ElideNone)
-        self._list_tabs.addTab(self._watch_win, "Watch [6]")
+        self._list_tabs.addTab(self._watch_win, "Watch [W]")
         self._list_tabs.addTab(self._watch_did_win, "Watch DID [7]")
         self._list_tabs.addTab(self._dtc_win, "DTC [8]")
-        self._list_tabs.addTab(self._rx_filter_win, "Rx Filter [9]")
+        self._list_tabs.addTab(self._rx_filter_win, "Rx Filter [F]")
         self._list_tabs.addTab(self._plot_list_win, "Plot List [B]")
-        self._list_tabs.addTab(self._settings_win, "Settings [A]")
+        self._list_tabs.addTab(self._settings_win, "Settings [S]")
 
         self._help_win = HelpWindow()
-        self._list_tabs.addTab(self._help_win, "Help [0]")
+        self._list_tabs.addTab(self._help_win, "Help [H]")
 
         self._v_splitter.addWidget(self._list_tabs)
 
@@ -423,7 +434,7 @@ class MainWindow(QMainWindow):
         _shortcut("Alt+1", lambda: self._focus.activate(5))   # Project Manager
         _shortcut("Alt+2", lambda: self._focus.activate(1))   # Trace
         _shortcut("Alt+3", lambda: self._focus.activate(2))   # Plot
-        _shortcut("Alt+4", lambda: self._focus.activate(6))   # Watch
+        _shortcut("Alt+4", lambda: self._focus.activate(7))   # Watch
         _shortcut("Alt+5", lambda: self._focus.activate(4))   # Database
         _shortcut("Alt+6", lambda: self._focus.activate(3))   # Diagnostics
         _shortcut("Alt+7", lambda: self._focus.activate(9))   # DTC
@@ -1195,9 +1206,11 @@ class MainWindow(QMainWindow):
             self._plot_service.max_display_points = int(value)
         elif category == "tracer" and key == "trace_format":
             self._trace_model.set_trace_format(str(value))
+        elif category == "general" and key == "decimal_places":
+            from cangui import signal_decoder
+            signal_decoder.set_decimal_places(int(value))
         elif category == "tabs":
             self._apply_tab_visibility()
-        self._options.save()
 
     # -- Misc --
 

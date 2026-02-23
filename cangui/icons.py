@@ -28,6 +28,8 @@ _MAP: dict[str, tuple[str, str]] = {
     "send":         ("fa5s.paper-plane",    _GN),
     "up":           ("fa5s.arrow-up",       _BL),
     "down":         ("fa5s.arrow-down",     _BL),
+    "left":         ("fa5s.arrow-left",     _BL),
+    "right":        ("fa5s.arrow-right",    _BL),
     "refresh":      ("fa5s.sync-alt",       _AM),
     # Playback
     "play":         ("fa5s.play",           _GN),

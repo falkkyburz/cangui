@@ -6,9 +6,11 @@ objects are buffered and decoded on a 100 ms timer so the UI is not hammered
 by high-frequency CAN traffic.
 """
 
+import time
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QTimer, QByteArray, QMimeData
+from PySide6.QtGui import QColor
 
 from cangui.can_message import CanMessage
 from cangui.signal_decoder import SignalDecoder
@@ -33,6 +35,8 @@ class WatchEntry:
     value: str = ""
     unit: str = ""
     direction: str = "Rx"
+    pane: int = 0
+    last_update: float = -1000.0
 
     @property
     def name(self) -> str:
@@ -40,7 +44,7 @@ class WatchEntry:
         return self.display_name or self.signal_name
 
 
-COLUMNS = ["Name", "Value", "Direction", "Origin"]
+COLUMNS = ["Name", "Value", "Direction"]
 
 _DRAG_MIME = "application/x-cangui-rows"
 
@@ -73,6 +77,11 @@ class WatchModel(QAbstractTableModel):
         self._batch_timer.setInterval(100)
         self._batch_timer.timeout.connect(self._flush)
         self._batch_timer.start()
+
+        self._highlight_timer = QTimer(self)
+        self._highlight_timer.setInterval(100)
+        self._highlight_timer.timeout.connect(self._refresh_highlights)
+        self._highlight_timer.start()
 
     def set_decoder(self, decoder: SignalDecoder):
         """Replace the active signal decoder.
@@ -123,22 +132,37 @@ class WatchModel(QAbstractTableModel):
         return None
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
-        """Return display text for the given cell.
+        """Return display text, tooltip, or background colour for the given cell.
 
-        The Value column (1) appends the unit string when present.  The Origin
-        column (3) formats as ``MessageName.SignalName`` when a decoder is
-        available.
+        The Value column (1) appends the unit string when present.  Column 0
+        carries a tooltip showing the signal origin (message.signal + CAN ID).
 
         Args:
             index: Cell position in the model.
-            role: Only ``DisplayRole`` is handled.
+            role: ``DisplayRole``, ``ToolTipRole``, or ``BackgroundRole``.
 
         Returns:
-            Cell text, or ``None`` for unhandled roles or invalid indices.
+            Cell value, or ``None`` for unhandled roles or invalid indices.
         """
-        if not index.isValid() or role != Qt.ItemDataRole.DisplayRole:
+        if not index.isValid():
             return None
         entry = self._entries[index.row()]
+
+        if role == Qt.ItemDataRole.ToolTipRole and index.column() == 0:
+            msg_name = self._decoder.get_symbol(entry.arb_id) if self._decoder else ""
+            if msg_name:
+                return f"Source: {msg_name}.{entry.signal_name} (ID: 0x{entry.arb_id:X})"
+            return f"Signal: {entry.signal_name} (ID: 0x{entry.arb_id:X})"
+
+        if role == Qt.ItemDataRole.BackgroundRole:
+            elapsed = time.monotonic() - entry.last_update
+            if elapsed < 1.5:
+                alpha = max(0, int(180 * (1.0 - elapsed / 1.5)))
+                return QColor(100, 200, 100, alpha)
+            return None
+
+        if role != Qt.ItemDataRole.DisplayRole:
+            return None
         match index.column():
             case 0: return entry.name
             case 1:
@@ -146,11 +170,6 @@ class WatchModel(QAbstractTableModel):
                     return f"{entry.value} {entry.unit}"
                 return entry.value
             case 2: return entry.direction
-            case 3:
-                msg_name = self._decoder.get_symbol(entry.arb_id) if self._decoder else ""
-                if msg_name:
-                    return f"{msg_name}.{entry.signal_name}"
-                return entry.signal_name
         return None
 
     def flags(self, index: QModelIndex):
@@ -205,20 +224,20 @@ class WatchModel(QAbstractTableModel):
         """
         if not data.hasFormat(_DRAG_MIME):
             return False
-        src_rows = [int(r) for r in bytes(data.data(_DRAG_MIME)).split(b",")]
+        src_rows = sorted(int(r) for r in bytes(data.data(_DRAG_MIME)).split(b","))
         dest = row if row >= 0 else self.rowCount()
-        self.beginResetModel()
-        offset = 0
-        for src in sorted(src_rows):
-            effective_src = src - offset
-            effective_dest = dest - offset if dest > src else dest
-            if effective_src == effective_dest:
-                continue
-            item = self._entries.pop(effective_src)
-            self._entries.insert(effective_dest, item)
-            if dest > src:
-                offset += 1
+        # Extract items first (preserving relative order), then remove from
+        # highest to lowest so earlier pops don't shift later indices.
+        items = [self._entries[r] for r in src_rows]
+        for r in reversed(src_rows):
+            self._entries.pop(r)
+        # Shift dest to account for items removed before it.
+        removed_before = sum(1 for r in src_rows if r < dest)
+        adj_dest = dest - removed_before
+        for i, item in enumerate(items):
+            self._entries.insert(adj_dest + i, item)
         self._rebuild_index()
+        self.beginResetModel()
         self.endResetModel()
         return True
 
@@ -335,6 +354,7 @@ class WatchModel(QAbstractTableModel):
                         new_val = ds.display_value
                         if entry.value != new_val:
                             entry.value = new_val
+                            entry.last_update = time.monotonic()
                             if not entry.unit and ds.unit:
                                 entry.unit = ds.unit
                             changed_indices.add(idx)
@@ -346,6 +366,33 @@ class WatchModel(QAbstractTableModel):
             self.dataChanged.emit(
                 self.index(min_idx, 1),
                 self.index(max_idx, 1),
+            )
+
+    def set_entry_pane(self, row: int, pane: int):
+        """Move the entry at *row* to the given pane (0 = left, 1 = right).
+
+        Triggers a full model reset so both proxy views re-evaluate their
+        filter predicates.
+
+        Args:
+            row: Zero-based row index of the entry to move.
+            pane: Target pane index (0 or 1).
+        """
+        if 0 <= row < len(self._entries):
+            self._entries[row].pane = pane
+            self.beginResetModel()
+            self.endResetModel()
+
+    def _refresh_highlights(self):
+        """Periodic timer (100 ms): repaint rows whose highlight is still active."""
+        if not self._entries:
+            return
+        now = time.monotonic()
+        active_rows = [i for i, e in enumerate(self._entries) if now - e.last_update < 1.5]
+        if active_rows:
+            self.dataChanged.emit(
+                self.index(min(active_rows), 0),
+                self.index(max(active_rows), self.columnCount() - 1),
             )
 
     def _rebuild_index(self):

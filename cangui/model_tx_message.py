@@ -302,6 +302,14 @@ class TxMessageModel(QAbstractItemModel):
                 match col:
                     case 5: return _mux_prefix(sig) + sig.name
                     case 6:
+                        if sig.choices:
+                            val_str = str(sig.value)
+                            for choice in sig.choices:
+                                parts = choice.split(" = ", 1)
+                                if len(parts) == 2 and (
+                                    parts[1] == val_str or parts[0] == val_str
+                                ):
+                                    return choice
                         if sig.unit:
                             return f"{sig.value} {sig.unit}"
                         return str(sig.value)

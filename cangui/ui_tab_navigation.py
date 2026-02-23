@@ -7,7 +7,7 @@ from PySide6.QtGui import QPainter, QColor, QPen
 
 from pyqtgraph.parametertree import ParameterTree
 
-_SEL_FOCUS   = QColor("#2B7CD3")
+_SEL_FOCUS   = QColor("#D0DDF2")
 _SEL_NOFOCUS = QColor("#D0DDF2")
 _IND_ON_BLUE = QColor("#FFFFFF")
 _IND_ON_LIGHT= QColor("#3A5A8A")

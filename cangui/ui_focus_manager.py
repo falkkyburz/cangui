@@ -41,6 +41,7 @@ class FocusManager(QObject):
         self._entries: list[tuple[str, QWidget, QTabWidget, str]] = []
         self._key_map: dict[int, int] = {}  # Qt.Key -> entry index
         self._selecting = False
+        self._space_actions: dict = {}
 
     def register(self, key: str, window: QWidget, tab_widget: QTabWidget, label: str):
         """Register a dock window so it can be activated by a key press.
@@ -108,6 +109,15 @@ class FocusManager(QObject):
         finally:
             self._selecting = False
 
+    def set_space_action(self, view, callback):
+        """Register a callback invoked when Space is pressed while view has focus.
+
+        Args:
+            view: The widget that must have focus for the callback to fire.
+            callback: Callable with no arguments invoked on Space key press.
+        """
+        self._space_actions[view] = callback
+
     def install(self):
         """Install this object as an application-wide event filter."""
         QApplication.instance().installEventFilter(self)
@@ -156,7 +166,8 @@ class FocusManager(QObject):
 
         Ignores events that occur while a modifier key is held or when focus
         is inside an editable widget (so the user can still type digits).
-        Routes Space to expand/collapse tree rows.
+        Routes Space to registered callbacks; Left/Right arrows expand/collapse
+        tree rows.
 
         Args:
             obj: The QObject that received the event (unused).
@@ -185,14 +196,24 @@ class FocusManager(QObject):
 
         key = event.key()
 
-        # Space → toggle expand/collapse in tree views
-        if key == Qt.Key.Key_Space and isinstance(focus, QTreeView):
+        # Space → invoke registered action (e.g. send TX message in Wait state)
+        if key == Qt.Key.Key_Space:
+            if focus in self._space_actions:
+                self._space_actions[focus]()
+                return True
+
+        # Left/Right arrows → collapse/expand tree rows
+        if isinstance(focus, QTreeView):
             idx = focus.currentIndex()
             if idx.isValid():
                 idx = idx.sibling(idx.row(), 0)
                 if focus.model().hasChildren(idx):
-                    focus.setExpanded(idx, not focus.isExpanded(idx))
-                    return True
+                    if key == Qt.Key.Key_Right:
+                        focus.expand(idx)
+                        return True
+                    if key == Qt.Key.Key_Left:
+                        focus.collapse(idx)
+                        return True
 
         # F1 → Help (last entry)
         if key == Qt.Key.Key_F1:

@@ -108,7 +108,7 @@ class ConnectionModel(QAbstractTableModel):
     """
 
     COLUMNS = ["", "Bus", "Name", "Channel", "Interface", "Bit Rate", "Status",
-               "Overruns", "QXmtFulls", "Options", "Bus Load"]
+               "Overruns", "QXmtFulls", "Listen Only", "Bus Load"]
 
     def __init__(self, can_service: CanService, parent=None):
         """Initialise the model and connect to CanService signals.
@@ -123,6 +123,7 @@ class ConnectionModel(QAbstractTableModel):
         self._service.connection_added.connect(self._on_connection_added)
         self._service.connection_removed.connect(self._on_connection_removed)
         self._service.connection_status_changed.connect(self._on_status_changed)
+        self._service.bus_load_updated.connect(self._on_load_updated)
 
     def rowCount(self, parent=QModelIndex()) -> int:
         """Return the number of CAN connections managed by CanService.
@@ -202,10 +203,13 @@ class ConnectionModel(QAbstractTableModel):
                     return conn.overruns
                 case 8:
                     return conn.qxmt_fulls
-                case 9:
-                    return "EF" if not conn.config.fd else "FD"
                 case 10:
+                    if conn.bus.is_connected and conn.bus_load > 0.0:
+                        return f"{conn.bus_load:.0f}%"
                     return ""
+
+        if role == Qt.ItemDataRole.CheckStateRole and col == 9:
+            return Qt.CheckState.Checked if conn.config.listen_only else Qt.CheckState.Unchecked
 
         if role == Qt.ItemDataRole.ForegroundRole and col == 6:
             from PySide6.QtGui import QColor
@@ -240,7 +244,7 @@ class ConnectionModel(QAbstractTableModel):
         """
         flags = super().flags(index)
         col = index.column()
-        if col == 0:
+        if col in (0, 9):
             flags |= Qt.ItemFlag.ItemIsUserCheckable
         if col in (2, 3, 4, 5):
             flags |= Qt.ItemFlag.ItemIsEditable
@@ -278,6 +282,13 @@ class ConnectionModel(QAbstractTableModel):
                 self._service.connect(row)
             else:
                 self._service.disconnect(row)
+            return True
+
+        if role == Qt.ItemDataRole.CheckStateRole and index.column() == 9:
+            row = index.row()
+            conn = self._service.connections[row]
+            conn.config.listen_only = Qt.CheckState(value) == Qt.CheckState.Checked
+            self.dataChanged.emit(index, index)
             return True
 
         if role == Qt.ItemDataRole.EditRole:
@@ -385,3 +396,18 @@ class ConnectionModel(QAbstractTableModel):
         left = self.index(index, 0)
         right = self.index(index, self.columnCount() - 1)
         self.dataChanged.emit(left, right)
+
+    def _on_load_updated(self, index: int, _load: float):
+        """Handle CanService.bus_load_updated by refreshing the Bus Load column.
+
+        Args:
+            index: The zero-based row whose bus load changed.
+            _load: The new load percentage (unused; the model re-reads from
+                the connection object on the next data() call).
+
+        Emits:
+            dataChanged: For the Bus Load cell of the affected row.
+        """
+        col = self.COLUMNS.index("Bus Load")
+        cell = self.index(index, col)
+        self.dataChanged.emit(cell, cell)

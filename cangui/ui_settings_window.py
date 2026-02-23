@@ -490,9 +490,7 @@ class SettingsWindow(BaseDockWindow):
         self._options = options
 
         info = QLabel(
-            "Changes apply immediately. Global defaults are saved to "
-            "~/.config/cangui/options.json. The active project stores "
-            "its own overrides, which take effect when the project is loaded."
+            "Changes apply immediately and are saved with the project file."
         )
         info.setWordWrap(True)
         info.setStyleSheet("color: gray; font-style: italic;")

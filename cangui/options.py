@@ -10,21 +10,8 @@ be passed only the slice they need (e.g., ``PlotWindow`` receives
 ``options.plot``).
 """
 
-import json
 import sys
-from dataclasses import dataclass, field, asdict
-from pathlib import Path
-
-
-def _config_path() -> Path:
-    """Return the path to the global options file, creating parent dirs.
-
-    Returns:
-        ``~/.config/cangui/options.json`` on all platforms.
-    """
-    p = Path.home() / ".config" / "cangui"
-    p.mkdir(parents=True, exist_ok=True)
-    return p / "options.json"
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -156,47 +143,16 @@ class AppOptions:
     tabs: TabVisibilityOptions = field(default_factory=TabVisibilityOptions)
 
     def save(self):
-        """Write current options to disk.
-
-        Serializes the full options tree to
-        ``~/.config/cangui/options.json`` using ``json.dump`` with
-        pretty-printing.  Called automatically after every
-        ``Settings → <value changed>`` event in
-        :class:`~cangui.ui_main_window.MainWindow._on_setting_changed`.
-        """
-        with open(_config_path(), "w") as f:
-            json.dump(asdict(self), f, indent=2)
+        """No-op: settings are persisted in the project JSON, not a global file."""
 
     @classmethod
     def load(cls) -> "AppOptions":
-        """Load options from disk, returning defaults on any error.
+        """Return a default :class:`AppOptions` instance.
 
-        Filters each subsection dict to only known field names before
-        constructing the dataclass, so extra keys from a newer version do not
-        cause ``TypeError`` on an older build.
+        Settings are stored in the project JSON and applied on project open;
+        no global config file is read.
 
         Returns:
-            Populated :class:`AppOptions` instance.  Returns a default
-            instance if the file does not exist or cannot be parsed.
+            Default :class:`AppOptions` instance.
         """
-        path = _config_path()
-        if not path.exists():
-            return cls()
-        try:
-            with open(path) as f:
-                data = json.load(f)
-            # Filter to only known keys to avoid TypeError on old/extra fields
-            def _filter(dc, d):
-                """Return *d* filtered to only the keys declared in dataclass *dc*."""
-                return {k: v for k, v in d.items() if k in dc.__dataclass_fields__}
-            return cls(
-                general=GeneralOptions(**_filter(GeneralOptions, data.get("general", {}))),
-                rx_tx=RxTxOptions(**_filter(RxTxOptions, data.get("rx_tx", {}))),
-                tracer=TracerOptions(**_filter(TracerOptions, data.get("tracer", {}))),
-                connection_defaults=ConnectionDefaults(
-                    **_filter(ConnectionDefaults, data.get("connection_defaults", {}))),
-                plot=PlotOptions(**_filter(PlotOptions, data.get("plot", {}))),
-                tabs=TabVisibilityOptions(**_filter(TabVisibilityOptions, data.get("tabs", {}))),
-            )
-        except Exception:
-            return cls()
+        return cls()

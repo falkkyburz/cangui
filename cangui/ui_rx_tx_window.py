@@ -9,8 +9,8 @@ from PySide6.QtWidgets import (
     QApplication, QComboBox, QHeaderView, QTreeView, QSplitter,
     QStyledItemDelegate, QToolBar, QLabel, QWidget, QVBoxLayout, QMenu, QAbstractItemView,
 )
-from PySide6.QtGui import QAction
-from PySide6.QtCore import Qt, Signal, QEvent, QObject, QSortFilterProxyModel
+from PySide6.QtGui import QAction, QFont
+from PySide6.QtCore import Qt, Signal, QEvent, QObject, QSortFilterProxyModel, QTimer
 
 from cangui.model_rx_message import RxMessageModel
 from cangui.model_tx_message import TxMessageModel
@@ -87,16 +87,33 @@ class _ClickOutsideFilter(QObject):
         return widget is view or view.isAncestorOf(widget)
 
 
+class _HexFontDelegate(QStyledItemDelegate):
+    """Renders a column using a monospaced font for hex data display."""
+
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        option.font.setFamily("Courier New")
+        option.font.setStyleHint(QFont.StyleHint.Monospace)
+
+
 class TxSignalValueDelegate(QStyledItemDelegate):
     """Delegate for the TX signal value column.
 
-    Creates a ``QComboBox`` when the signal has a value table (``choices``
-    stored under ``Qt.ItemDataRole.UserRole``), otherwise falls back to the
-    default line-edit.
+    Creates an editable ``QComboBox`` when the signal has a value table
+    (``choices`` stored under ``Qt.ItemDataRole.UserRole``), otherwise falls
+    back to the default line-edit.  The Data (hex) column for top-level rows
+    is rendered with a monospaced font.
     """
 
+    def initStyleOption(self, option, index):
+        """Apply a monospaced font for top-level hex data display."""
+        super().initStyleOption(option, index)
+        if not index.parent().isValid():
+            option.font.setFamily("Courier New")
+            option.font.setStyleHint(QFont.StyleHint.Monospace)
+
     def createEditor(self, parent, option, index):
-        """Return a combobox for enum signals, or the default editor otherwise.
+        """Return an editable combobox for enum signals, or the default editor.
 
         Args:
             parent: Parent widget for the editor.
@@ -104,19 +121,16 @@ class TxSignalValueDelegate(QStyledItemDelegate):
             index: Model index being edited.
 
         Returns:
-            ``QComboBox`` pre-loaded with named values when choices are
-            available; the standard ``QLineEdit`` otherwise.
+            Editable ``QComboBox`` pre-loaded with named values when choices
+            are available; the standard ``QLineEdit`` otherwise.
         """
         choices = index.data(Qt.ItemDataRole.UserRole)
         if choices:
             combo = QComboBox(parent)
+            combo.setEditable(True)
+            combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
             combo.addItems(choices)
-            current = index.data(Qt.ItemDataRole.DisplayRole) or ""
-            # Strip trailing unit if present
-            current_str = str(current).split(" ")[0]
-            idx = combo.findText(current_str)
-            if idx >= 0:
-                combo.setCurrentIndex(idx)
+            QTimer.singleShot(0, combo.showPopup)
             return combo
         return super().createEditor(parent, option, index)
 
@@ -129,15 +143,22 @@ class TxSignalValueDelegate(QStyledItemDelegate):
         """
         if isinstance(editor, QComboBox):
             current = index.data(Qt.ItemDataRole.DisplayRole) or ""
-            current_str = str(current).split(" ")[0]
+            current_str = str(current)
             idx = editor.findText(current_str)
             if idx >= 0:
                 editor.setCurrentIndex(idx)
+            else:
+                editor.setEditText(current_str)
         else:
             super().setEditorData(editor, index)
 
     def setModelData(self, editor, model, index):
-        """Write the selected value back to the model.
+        """Write the selected or typed value back to the model.
+
+        When the text has the ``"N = Name"`` format produced by
+        :meth:`~cangui.signal_decoder.SignalDecoder.get_signals_for_id`, only
+        the ``Name`` part is written so the underlying encoder receives the
+        plain string name.
 
         Args:
             editor: The editor widget.
@@ -145,7 +166,10 @@ class TxSignalValueDelegate(QStyledItemDelegate):
             index: The model index to update.
         """
         if isinstance(editor, QComboBox):
-            model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
+            text = editor.currentText()
+            parts = text.split(" = ", 1)
+            value = parts[1] if len(parts) == 2 else text
+            model.setData(index, value, Qt.ItemDataRole.EditRole)
         else:
             super().setModelData(editor, model, index)
 
@@ -315,8 +339,8 @@ class _TxSortProxy(QSortFilterProxyModel):
 _DEFAULT_WIDTHS = [40, 80, 35, 50, 50, 120, 200, 80, 60, 60, 60]
 
 # Connection table: (empty/checkbox), Bus, Name, Channel, Interface, Bit Rate,
-#                   Status, Overruns, QXmtFulls, Options  (Bus Load stretches)
-_DEFAULT_CONN_WIDTHS = [28, 38, 80, 110, 120, 80, 60, 68, 68, 48]
+#                   Status, Overruns, QXmtFulls, Listen Only  (Bus Load stretches)
+_DEFAULT_CONN_WIDTHS = [28, 38, 80, 110, 120, 80, 60, 68, 68, 80]
 
 
 class RxTxWindow(BaseDockWindow):
@@ -432,6 +456,7 @@ class RxTxWindow(BaseDockWindow):
         self._rx_view.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
         self._rx_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._rx_view.customContextMenuRequested.connect(self._rx_context_menu)
+        self._rx_view.setItemDelegateForColumn(6, _HexFontDelegate(self._rx_view))
         self._set_default_widths(self._rx_view)
         rx_layout.addWidget(self._rx_view)
         self._splitter.addWidget(rx_container)
@@ -621,6 +646,10 @@ class RxTxWindow(BaseDockWindow):
         for i, width in enumerate(widths):
             if i < header.count():
                 header.resizeSection(i, width)
+
+    def send_space_pressed(self):
+        """Send selected TX messages once (invoked by the Space key via FocusManager)."""
+        self._send_once()
 
     def edit_last_tx_can_id(self):
         """Start editing the CAN-ID cell of the last TX row."""

@@ -1,14 +1,21 @@
 """Keyboard shortcut reference panel displayed in the Help tab.
 
-HelpWindow presents a read-only table of (Key, Action, Context) tuples so
-users can quickly discover available keyboard shortcuts without leaving the
-application.
+HelpWindow presents an About section followed by a read-only table of
+(Key, Action, Context) tuples so users can quickly discover available
+keyboard shortcuts without leaving the application.
 """
 
+from importlib.metadata import version as _pkg_version
+
 from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex
-from PySide6.QtWidgets import QWidget, QTableView, QHeaderView
+from PySide6.QtWidgets import QWidget, QTableView, QHeaderView, QTextBrowser, QSplitter
 
 from cangui.ui_base_dock_window import BaseDockWindow
+
+try:
+    _VERSION = _pkg_version("cangui")
+except Exception:
+    _VERSION = "0.1.0"
 
 
 COLUMNS = ["Key", "Action", "Context"]
@@ -118,13 +125,26 @@ class HelpWindow(BaseDockWindow):
     TITLE = "Help"
 
     def __init__(self, parent=None):
-        """Create the help panel with a read-only shortcut table.
+        """Create the help panel with an About section and a shortcut table.
 
         Args:
             parent: Optional parent QWidget.
         """
         super().__init__(parent)
         self._model = HelpModel(self)
+
+        self._about = QTextBrowser()
+        self._about.setOpenExternalLinks(True)
+        self._about.setMaximumHeight(120)
+        self._about.setHtml(
+            f"<h2 style='margin:4px 0'>cangui &nbsp; <small>v{_VERSION}</small></h2>"
+            "<p style='margin:2px 0'>CAN Network GUI — a PySide6 front-end for "
+            "<a href='https://python-can.readthedocs.io'>python-can</a> and "
+            "<a href='https://cantools.readthedocs.io'>cantools</a>.</p>"
+            "<p style='margin:2px 0'>"
+            "Press a digit key (no modifiers) to switch panels. "
+            "F1 focuses this Help tab.</p>"
+        )
 
         self._table = QTableView()
         self._table.setModel(self._model)
@@ -135,6 +155,7 @@ class HelpWindow(BaseDockWindow):
         self._table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Interactive
         )
+        self._layout.addWidget(self._about)
         self._layout.addWidget(self._table)
 
     @property

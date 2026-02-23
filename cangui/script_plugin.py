@@ -36,6 +36,14 @@ class ScriptPlugin:
             drop the frame entirely.
             Results with a different length are discarded (frame passes through).
 
+    Logging from a plugin::
+
+        from cangui.script_api import log
+
+        def process_rx(arb_id: int, data: bytes) -> bytes | None:
+            log(f"RX 0x{arb_id:03X}")
+            return data
+
     At least one of process_tx / process_rx must be defined.
     """
 

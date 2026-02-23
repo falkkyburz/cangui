@@ -14,6 +14,18 @@ from dataclasses import dataclass
 
 from cangui.database_manager import DatabaseManager
 
+_decimal_places: int = 3
+
+
+def set_decimal_places(n: int) -> None:
+    """Set the number of decimal places used when formatting float signal values.
+
+    Args:
+        n: Number of decimal places (clamped to 0–10).
+    """
+    global _decimal_places
+    _decimal_places = max(0, min(10, n))
+
 
 @dataclass
 class DecodedSignal:
@@ -59,7 +71,7 @@ class DecodedSignal:
             ``"123.456"`` for a float or ``"RUNNING"`` for an enum string.
         """
         if isinstance(self.value, float):
-            return f"{self.value:.3f}"
+            return f"{self.value:.{_decimal_places}f}"
         return str(self.value)
 
 
@@ -164,7 +176,7 @@ class SignalDecoder:
         for sig in msg.signals:
             choices = None
             if sig.choices:
-                choices = [str(v) for v in sig.choices.values()]
+                choices = [f"{k} = {v}" for k, v in sig.choices.items()]
             result.append(DecodedSignal(
                 name=sig.name,
                 value=sig.initial if sig.initial is not None else 0,

@@ -106,13 +106,8 @@ QTreeView::item:hover, QTableView::item:hover {
     background-color: #E8F0FD;
 }
 QTreeView::item:selected, QTableView::item:selected {
-    background-color: #2B7CD3;
-    color: #FFFFFF;
-}
-QTreeView[focused="false"]::item:selected,
-QTableView[focused="false"]::item:selected {
     background-color: #D0DDF2;
-    color: #404040;
+    color: #1C1C1E;
 }
 
 
@@ -126,9 +121,9 @@ QHeaderView::section {
     border: none;
     border-right: 1px solid #D0D1D5;
     border-bottom: 1px solid #D0D1D5;
-    padding: 4px 6px;
+    padding: 2px 4px;
     font-weight: bold;
-    font-size: 12px;
+    font-size: 11px;
 }
 QHeaderView::section:last {
     border-right: none;
