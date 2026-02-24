@@ -152,6 +152,14 @@ class SettingsModel(QAbstractItemModel):
             editor_type="int", min_val=10, max_val=1000,
             category="plot", key="update_interval_ms"))
 
+        # Script
+        script = SettingNode("Script")
+        self._root.add_child(script)
+        script.add_child(SettingNode(
+            "Log throttle (s)", opts.script.log_throttle_s,
+            editor_type="float", min_val=0.0, max_val=60.0,
+            category="script", key="log_throttle_s"))
+
         # Tabs
         tabs_node = SettingNode("Tabs")
         self._root.add_child(tabs_node)

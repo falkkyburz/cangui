@@ -236,6 +236,7 @@ class MainWindow(QMainWindow):
         script_api.set_log_callback(
             lambda msg: self._log_win.append("Script", msg)
         )
+        script_api.set_log_throttle(self._options.script.log_throttle_s)
 
         # Populate help entries
         self._help_win.set_entries([
@@ -955,6 +956,7 @@ class MainWindow(QMainWindow):
         # Restore settings
         if data.settings:
             self._settings_win.apply_project_settings(data.settings)
+            script_api.set_log_throttle(self._options.script.log_throttle_s)
 
         # Restore Script plugin
         self._script_plugin.unload()
@@ -1390,6 +1392,8 @@ class MainWindow(QMainWindow):
             signal_decoder.set_decimal_places(int(value))
         elif category == "tabs":
             self._apply_tab_visibility()
+        elif category == "script" and key == "log_throttle_s":
+            script_api.set_log_throttle(float(value))
 
     # -- Misc --
 

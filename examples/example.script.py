@@ -10,6 +10,7 @@ Interface
     init(connections)        — reset counters when bus comes up / is reset
     process_tx(arb_id, data) — fill in E2E counter and CRC in-place
     process_rx(arb_id, data) — validate E2E counter and CRC; drop on error
+    log(message)             — write a message to the Log tab
 
 DLC contract
 ------------
@@ -32,6 +33,9 @@ Counter 0x0F is reserved ("no data available").
 Counter wraps 0 → 14, skipping 15.
 """
 
+# Script API import for Log tab output.
+from cangui.script_api import log
+
 # ---------------------------------------------------------------------------
 # Configuration — replace with project-specific values
 # ---------------------------------------------------------------------------
@@ -49,7 +53,6 @@ DATA_ID_LIST: list[int] = [
 
 _tx_counters: dict[int, int] = {}
 _rx_counters: dict[int, int] = {}
-
 # ---------------------------------------------------------------------------
 # init
 # ---------------------------------------------------------------------------
@@ -58,6 +61,7 @@ def init(connections: list[dict]) -> None:
     """Reset per-ID counters when the bus comes up or is reset."""
     _tx_counters.clear()
     _rx_counters.clear()
+    log("E2E script initialized")
 
 # ---------------------------------------------------------------------------
 # CRC-8/AUTOSAR
@@ -116,13 +120,25 @@ def process_rx(arb_id: int, data: bytes) -> bytes | None:
 
     counter = (counter_byte >> 4) & 0x0F
     if counter == 0x0F:
+        log(
+            f"E2E RX drop: reserved counter 0x0F on 0x{arb_id:03X}",
+            key=f"{arb_id}:reserved_counter",
+        )
         return None  # reserved "no data" value
 
     crc_input = bytes([DATA_ID_LIST[counter]]) + bytes(payload) + bytes([counter_byte, 0x00])
     if _crc8_autosar(crc_input) != received_crc:
+        log(
+            f"E2E RX drop: CRC mismatch on 0x{arb_id:03X}",
+            key=f"{arb_id}:crc_mismatch",
+        )
         return None  # CRC mismatch
 
     if _rx_counters.get(arb_id) == counter:
+        log(
+            f"E2E RX drop: duplicate counter {counter} on 0x{arb_id:03X}",
+            key=f"{arb_id}:duplicate_counter",
+        )
         return None  # duplicate counter
 
     _rx_counters[arb_id] = counter

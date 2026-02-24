@@ -94,6 +94,18 @@ class ConnectionDefaults:
 
 
 @dataclass
+class ScriptOptions:
+    """Options for script plugins.
+
+    Attributes:
+        log_throttle_s: Minimum interval between log messages with the same
+            throttle key. Use 0 to disable throttling.
+    """
+
+    log_throttle_s: float = 1.0
+
+
+@dataclass
 class TabVisibilityOptions:
     """Per-tab visibility flags for the 3-pane layout.
 
@@ -132,6 +144,7 @@ class AppOptions:
         tracer: Trace recording options.
         connection_defaults: Defaults for new connection rows.
         plot: Plot subsystem options.
+        script: Script plugin options.
         tabs: Tab visibility flags.
     """
 
@@ -140,6 +153,7 @@ class AppOptions:
     tracer: TracerOptions = field(default_factory=TracerOptions)
     connection_defaults: ConnectionDefaults = field(default_factory=ConnectionDefaults)
     plot: PlotOptions = field(default_factory=PlotOptions)
+    script: ScriptOptions = field(default_factory=ScriptOptions)
     tabs: TabVisibilityOptions = field(default_factory=TabVisibilityOptions)
 
     def save(self):
