@@ -170,6 +170,8 @@ class SettingsModel(QAbstractItemModel):
             ("Plot", "plot"),
             ("Diagnostics", "diagnostics"),
             ("Project Manager", "project_manager"),
+            ("Log", "log"),
+            ("Replay", "replay"),
             ("Watch", "watch"),
             ("Watch DID", "watch_did"),
             ("DTC", "dtc"),
@@ -177,7 +179,6 @@ class SettingsModel(QAbstractItemModel):
             ("Plot List", "plot_list"),
             ("Settings", "settings"),
             ("Help", "help"),
-            ("Log", "log"),
         ]:
             tabs_node.add_child(SettingNode(
                 label, getattr(opts.tabs, key),

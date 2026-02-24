@@ -120,6 +120,8 @@ class TabVisibilityOptions:
     plot: bool = True
     diagnostics: bool = False
     project_manager: bool = True
+    log: bool = True
+    replay: bool = True
     watch: bool = True
     watch_did: bool = False
     dtc: bool = False
@@ -127,7 +129,6 @@ class TabVisibilityOptions:
     plot_list: bool = True
     settings: bool = True
     help: bool = True
-    log: bool = True
 
 
 @dataclass

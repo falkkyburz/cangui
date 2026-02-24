@@ -257,6 +257,24 @@ class TraceStoreReader:
                 yield entry
             row += len(page)
 
+    def duration(self) -> float:
+        """Return elapsed time in seconds from first to last record.
+
+        Computes the time difference between the first and last trace entries.
+        Returns 0.0 if the trace has fewer than 2 records.
+
+        Returns:
+            Duration in seconds, or 0.0 for empty/single-entry traces.
+        """
+        total = self.row_count()
+        if total < 2:
+            return 0.0
+        first_entries = self.read_range(0, 1)
+        last_entries = self.read_range(total - 1, 1)
+        if not first_entries or not last_entries:
+            return 0.0
+        return last_entries[0].timestamp - first_entries[0].timestamp
+
 
 def default_trace_store_name() -> str:
     return "trace.ctb"

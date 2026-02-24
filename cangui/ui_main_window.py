@@ -41,6 +41,7 @@ from cangui.ui_rx_filter_window import RxFilterWindow
 from cangui.ui_watch_window import WatchWindow
 from cangui.ui_project_window import ProjectWindow
 from cangui.ui_trace_window import TraceWindow
+from cangui.ui_replay_list_window import ReplayListWindow
 from cangui.ui_plot_window import PlotWindow
 from cangui.ui_diagnostic_window import DiagnosticWindow
 from cangui.ui_watch_did_window import WatchDidWindow
@@ -55,7 +56,8 @@ from cangui import script_api
 from cangui.ui_focus_manager import FocusManager
 from cangui.service_workspace import WorkspaceService
 from cangui.worker_can_transmitter import CanTransmitter
-from cangui.worker_trace_player import TracePlayer
+from cangui.worker_ctb_player import CtbTracePlayer, ReplayMode
+from cangui.trace_store import TraceStoreReader
 
 
 @dataclass(frozen=True)
@@ -109,8 +111,8 @@ class MainWindow(QMainWindow):
     -------
     * :class:`~cangui.worker_can_transmitter.CanTransmitter` — periodic TX
       worker started on the first successful connection.
-    * :class:`~cangui.worker_trace_player.TracePlayer` — replays a loaded
-      trace file through the dispatcher.
+    * :class:`~cangui.worker_ctb_player.CtbTracePlayer` — replays a loaded
+      CTB trace file with configurable speed, mode, and bus override.
 
     Signals
     -------
@@ -192,8 +194,8 @@ class MainWindow(QMainWindow):
         # TX transmitter (started when first connection is made)
         self._transmitter: CanTransmitter | None = None
 
-        # Trace replay
-        self._trace_player: TracePlayer | None = None
+        # CTB trace replay
+        self._ctb_player: CtbTracePlayer | None = None
 
         # Script plugin
         self._script_plugin = ScriptPlugin()
@@ -219,6 +221,7 @@ class MainWindow(QMainWindow):
         self._focus.register("D", self._database_win, self._main_tabs, "Database")
         self._focus.register("M", self._project_win, self._small_tabs, "Project Manager")
         self._focus.register("L", self._log_win, self._small_tabs, "Log")
+        self._focus.register("R", self._replay_list_win, self._list_tabs, "Replay")
         self._focus.register("W", self._watch_win, self._list_tabs, "Watch")
         self._focus.register("7", self._watch_did_win, self._list_tabs, "Watch DID")
         self._focus.register("8", self._dtc_win, self._list_tabs, "DTC")
@@ -305,9 +308,16 @@ class MainWindow(QMainWindow):
 
         self._trace_win = TraceWindow(self._trace_model)
         self._trace_win.save_trace_requested.connect(self._save_trace)
-        self._trace_win.load_trace_requested.connect(self._load_trace)
         self._trace_win.start_recording_requested.connect(self._trace_start)
         self._trace_model.file_changed.connect(self._on_trace_file_changed)
+
+        self._replay_list_win = ReplayListWindow()
+        self._replay_list_win.load_trace_requested.connect(self._load_trace)
+        self._replay_list_win.replay_requested.connect(self._on_replay_requested)
+        self._replay_list_win.stop_requested.connect(self._on_trace_stop_requested)
+        self._replay_list_win.pause_requested.connect(self._on_replay_pause_requested)
+        self._replay_list_win.resume_requested.connect(self._on_replay_resume_requested)
+        self._replay_list_win.reset_requested.connect(self._on_replay_reset_requested)
 
         self._log_win = LogWindow()
         self._log_win.message_appended.connect(
@@ -387,6 +397,7 @@ class MainWindow(QMainWindow):
         self._list_tabs.setMovable(True)
         self._list_tabs.setUsesScrollButtons(True)
         self._list_tabs.setElideMode(Qt.TextElideMode.ElideNone)
+        self._list_tabs.addTab(self._replay_list_win, "Replay [R]")
         self._list_tabs.addTab(self._watch_win, "Watch [W]")
         self._list_tabs.addTab(self._watch_did_win, "Watch DID [7]")
         self._list_tabs.addTab(self._dtc_win, "DTC [8]")
@@ -1131,7 +1142,8 @@ class MainWindow(QMainWindow):
         self._trace_win.set_recording_state(True)
 
     def _trace_stop(self):
-        """Stop the active trace recording."""
+        """Stop the active trace recording or replay (F6 shortcut handler)."""
+        self._on_trace_stop_requested()
         self._trace_model.stop()
         self._trace_win.set_recording_state(False)
 
@@ -1139,7 +1151,29 @@ class MainWindow(QMainWindow):
         """Update the trace model's output folder from the current project path."""
         self._trace_model.set_trace_folder(self._project.trace_folder)
 
+    def _update_replay_trace_info(self, ctb_path: str):
+        """Update the Replay tab with trace file information.
+
+        Args:
+            ctb_path: Path to the loaded CTB file.
+        """
+        if not ctb_path:
+            self._replay_list_win.set_file_info("")
+            return
+
+        reader = TraceStoreReader(ctb_path)
+        frame_count = reader.row_count()
+        duration = reader.duration()
+
+        self._replay_list_win.set_file_info(ctb_path, frame_count, duration)
+
     def _on_trace_file_changed(self, path: str):
+        """Update replay window with trace info when file changes.
+
+        Args:
+            path: Path to the newly loaded trace file.
+        """
+        self._update_replay_trace_info(path)
         """Called when a new trace file is opened. Add it to the project."""
         if path:
             self._project.add_trace_file(path)
@@ -1185,7 +1219,6 @@ class MainWindow(QMainWindow):
         # Handle .ctb files directly
         if suffix == ".ctb":
             self._trace_model.load_trace_file(str(path_obj))
-            self._trace_win.set_replay_state(False)
             return
 
         # Convert .trc and .blf files to .ctb format
@@ -1201,7 +1234,6 @@ class MainWindow(QMainWindow):
             self._project_win.refresh()
             # Load the CTB file directly
             self._trace_model.load_trace_file(str(ctb_path))
-            self._trace_win.set_replay_state(False)
             return
 
         # Fallback for unknown formats (shouldn't happen with current dialog filters)
@@ -1209,9 +1241,86 @@ class MainWindow(QMainWindow):
         return
 
     def _on_replay_finished(self):
-        """Stop the trace model and reset the replay UI state when playback ends."""
+        """Stop the trace model when playback ends."""
         self._trace_model.stop()
-        self._trace_win.set_replay_state(False)
+
+    def _on_trace_stop_requested(self):
+        """Handle Stop button or F6 shortcut for both recording and replay.
+
+        Stops any active CTB replay in addition to model stop.
+        """
+        if self._ctb_player is not None:
+            self._ctb_player.stop()
+            self._ctb_player = None
+
+    def _on_replay_requested(self):
+        """Start CTB trace replay with current window settings.
+
+        Reads the current CTB file from the trace model, configures the player
+        with UI settings (mode, speed, bus, loop), connects signals, and starts
+        playback.
+        """
+        from pathlib import Path
+
+        ctb_path = self._trace_model.current_file
+        if not ctb_path or not ctb_path.endswith(".ctb"):
+            return
+
+        reader = TraceStoreReader(ctb_path)
+        if reader.row_count() == 0:
+            return
+
+        # Stop any existing player
+        if self._ctb_player is not None:
+            self._ctb_player.stop()
+
+        # Create new player
+        self._ctb_player = CtbTracePlayer(reader, self)
+        self._ctb_player.speed = self._replay_list_win.speed_factor
+        self._ctb_player.mode = ReplayMode(self._replay_list_win.replay_mode)
+        self._ctb_player.target_bus = self._replay_list_win.replay_bus
+        self._ctb_player.loop = self._replay_list_win.replay_loop
+
+        # Wire signals
+        self._ctb_player.tx_frame.connect(self._send_message)
+        self._ctb_player.rx_frame.connect(
+            lambda msg, direction: (
+                self._dispatcher.dispatch(msg),
+                self._trace_model.on_message(msg, direction),
+            )
+        )
+        self._ctb_player.progress_changed.connect(
+            lambda t: self._replay_list_win.set_replay_progress(t, reader.duration())
+        )
+        self._ctb_player.finished_playback.connect(self._on_ctb_replay_finished)
+
+        # Update UI and start playback
+        self._replay_list_win.set_replay_state(True)
+        self._ctb_player.start()
+
+    def _on_ctb_replay_finished(self):
+        """Handle completion of CTB trace replay."""
+        self._ctb_player = None
+        self._replay_list_win.set_replay_state(False)
+
+    def _on_replay_pause_requested(self):
+        """Pause the active CTB trace replay."""
+        if self._ctb_player is not None:
+            self._ctb_player.pause()
+
+    def _on_replay_resume_requested(self):
+        """Resume the paused CTB trace replay."""
+        if self._ctb_player is not None:
+            self._ctb_player.resume()
+
+    def _on_replay_reset_requested(self):
+        """Stop and restart the CTB trace replay from the beginning."""
+        if self._ctb_player is not None:
+            # Stop the current player
+            self._ctb_player.stop()
+            self._ctb_player = None
+        # Restart replay with current settings
+        self._on_replay_requested()
 
     # -- UDS / Diagnostics --
 
@@ -1562,8 +1671,8 @@ class MainWindow(QMainWindow):
         Args:
             event: Qt close event passed to the parent class.
         """
-        if self._trace_player is not None:
-            self._trace_player.stop()
+        if self._ctb_player is not None:
+            self._ctb_player.stop()
         if self._transmitter is not None:
             self._transmitter.stop()
         self._uds_service.disconnect()

@@ -9,7 +9,7 @@ messages by CAN ID or text.
 from PySide6.QtCore import Qt, Signal, QSortFilterProxyModel
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QToolBar, QTableView,
-    QFileDialog, QDoubleSpinBox, QLabel, QLineEdit, QHeaderView, QToolButton, QMenu,
+    QFileDialog, QLabel, QLineEdit, QHeaderView, QMenu,
     QApplication,
 )
 from PySide6.QtGui import QAction
@@ -105,23 +105,22 @@ class TraceWindow(BaseDockWindow):
         Mapping from state name to QSS style string used by :meth:`_set_state`.
 
     Signals:
-        load_trace_requested: Emitted with the chosen file path when the user
-            selects a trace file to load.
         save_trace_requested: Emitted with the chosen file path when the user
             saves the current trace.
+        load_trace_requested: Emitted with the chosen file path when the user
+            loads a trace file.
         start_recording_requested: Emitted when the Start toolbar button is
-            activated.
+            activated to begin live recording.
     """
 
     _STATE_STYLE: dict[str, str] = {
         "Stopped":   "color: gray;",
         "Recording": "color: #CC0000; font-weight: bold;",
-        "Replaying": "color: #006699;",
     }
     TITLE = "Trace"
 
-    load_trace_requested = Signal(str)  # file path
     save_trace_requested = Signal(str)  # file path
+    load_trace_requested = Signal(str)  # file path
     start_recording_requested = Signal()
 
     def __init__(self, model: TraceModel, parent=None):
@@ -175,31 +174,6 @@ class TraceWindow(BaseDockWindow):
         toolbar.addAction(load_action)
 
         toolbar.addSeparator()
-
-        # Speed selector for replay
-        toolbar.addWidget(QLabel(" Speed: "))
-        self._speed_spin = QDoubleSpinBox()
-        self._speed_spin.setRange(0.1, 100.0)
-        self._speed_spin.setSingleStep(0.5)
-        self._speed_spin.setDecimals(1)
-        self._speed_spin.setValue(1.0)
-        self._speed_spin.setSuffix("x")
-        self._speed_spin.setFixedWidth(72)
-        toolbar.addWidget(self._speed_spin)
-
-        self._max_speed_btn = QToolButton()
-        self._max_speed_btn.setText("Max")
-        self._max_speed_btn.setCheckable(True)
-        self._max_speed_btn.toggled.connect(
-            lambda on: self._speed_spin.setEnabled(not on)
-        )
-        toolbar.addWidget(self._max_speed_btn)
-
-        toolbar.addSeparator()
-
-        self._file_label = QLabel("")
-        self._file_label.setStyleSheet(SECONDARY_TEXT_STYLE)
-        toolbar.addWidget(self._file_label)
 
         self._layout.addWidget(toolbar)
 
@@ -280,20 +254,6 @@ class TraceWindow(BaseDockWindow):
         """
         return self._table
 
-    @property
-    def speed_factor(self) -> float:
-        """Return the numeric replay speed multiplier from the toolbar.
-
-        Returns ``1000.0`` when the Max button is checked (unlimited speed),
-        otherwise returns the spinbox value.
-
-        Returns:
-            Floating-point speed multiplier (e.g. ``0.5``, ``1.0``, ``1000.0``).
-        """
-        if self._max_speed_btn.isChecked():
-            return 1000.0
-        return self._speed_spin.value()
-
     def _update_button_state(self, recording: bool):
         """Enable or disable the Start/Stop toolbar actions.
 
@@ -308,7 +268,7 @@ class TraceWindow(BaseDockWindow):
         """Handle Start toolbar action by emitting start_recording_requested.
 
         Emits:
-            start_recording_requested: Always, when the Start button is clicked.
+            start_recording_requested: When the Start button is clicked.
         """
         self.start_recording_requested.emit()
 
@@ -380,19 +340,14 @@ class TraceWindow(BaseDockWindow):
         self._switch_to_live_mode()
 
     def _on_file_changed(self, path: str):
-        """Update the toolbar file-name label when the active trace file changes.
+        """Handle trace file change (kept for compatibility but does nothing now).
 
         Args:
             path: Absolute path to the newly active trace file, or an empty
                 string when no file is active.
         """
-        if path:
-            from pathlib import Path
-            self._file_label.setText(Path(path).name)
-            self._file_label.setToolTip(path)
-        else:
-            self._file_label.setText("")
-            self._file_label.setToolTip("")
+        # File info display moved to ReplayListWindow
+        pass
 
     def _on_filter_changed(self, text: str):
         """Apply the filter text to the proxy model.
@@ -473,14 +428,3 @@ class TraceWindow(BaseDockWindow):
         if self._model.live_mode:
             self._switch_to_scroll_mode()
 
-    def set_replay_state(self, playing: bool):
-        """Update the status label to reflect the current replay state.
-
-        Args:
-            playing: ``True`` while a trace file is being replayed, ``False``
-                when playback has stopped.
-        """
-        if playing:
-            self._set_state("Replaying")
-        else:
-            self._set_state("Stopped")
