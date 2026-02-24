@@ -22,7 +22,7 @@ from PySide6.QtCore import Qt, QAbstractTableModel, QModelIndex, QTimer, Signal,
 
 from cangui.can_message import CanMessage
 from cangui.trace_store import TraceStoreReader, TraceStoreWriter
-from cangui.trace_writer import TraceFormat
+from cangui.trace_writer import TraceFormat, TraceWriter
 
 
 @dataclass(frozen=True)
@@ -37,15 +37,109 @@ class TraceEntry:
     direction: str
     frame_type: str
     dlc: int
+    length: int
     data: bytes
 
 
-COLUMNS = ["#", "Time", "Bus", "ID (hex)", "Dir", "Type", "DLC", "Data (hex)"]
+COLUMNS = ["#", "Time", "Bus", "ID (hex)", "Dir", "Type", "DLC", "Length", "Data (hex)"]
 
 RING_BUFFER_SIZE = 10_000
 PAGE_SIZE = 1_024
 PAGE_CACHE_LIMIT = 24
 VIEW_UPDATE_INTERVAL_MS = 100
+
+
+def _convert_trc_to_ctb(trc_path: Path, ctb_path: Path) -> bool:
+    """Convert a trace file to CTB (Cangui internal) format.
+
+    Reads all entries from a TRC (PEAK), BLF (Vector), or other supported
+    trace file and writes them to CTB format. The CTB file uses a fixed-size
+    binary format optimized for random access in the Trace tab.
+
+    Args:
+        trc_path: Path to the trace file (.trc, .blf, or other supported format).
+        ctb_path: Path where the .ctb file should be written.
+
+    Returns:
+        True if conversion succeeded, False otherwise.
+    """
+    if not trc_path.exists():
+        return False
+
+    try:
+        from cangui.trace_reader import TraceReader
+
+        reader = TraceReader(trc_path)
+        writer = TraceStoreWriter(ctb_path)
+        writer.open()
+
+        for entry in reader.iter_entries():
+            trace_entry = TraceEntry(
+                number=entry.number,
+                timestamp=entry.message.timestamp,
+                bus=entry.message.bus,
+                can_id=entry.message.arbitration_id,
+                is_extended_id=entry.message.is_extended_id,
+                direction=entry.direction,
+                frame_type="FD" if entry.message.is_fd else (
+                    "RTR" if entry.message.is_remote_frame else (
+                        "Error" if entry.message.is_error_frame else "Data"
+                    )
+                ),
+                dlc=entry.message.dlc or len(entry.message.data),
+                length=len(entry.message.data),
+                data=entry.message.data,
+            )
+            writer.append_entry(trace_entry)
+
+        writer.close()
+        return True
+    except Exception as e:
+        print(f"Error converting TRC to CTB: {e}")
+        return False
+
+
+def _export_ctb_to_trc(ctb_path: Path) -> Path | None:
+    """Convert a CTB trace file to TRC (PEAK) format.
+
+    Reads all entries from the CTB file and writes them to a corresponding
+    .trc file in the same directory. The TRC file uses the same base name.
+
+    Args:
+        ctb_path: Path to the .ctb trace file.
+
+    Returns:
+        Path to the generated .trc file, or None if export failed.
+    """
+    if not ctb_path.exists():
+        return None
+
+    try:
+        trc_path = ctb_path.with_suffix(".trc")
+        reader = TraceStoreReader(ctb_path)
+
+        with TraceWriter(trc_path) as writer:
+            for entry in reader.iter_entries():
+                # Convert TraceEntry to CanMessage-like object for TraceWriter
+                msg = CanMessage(
+                    arbitration_id=entry.can_id,
+                    data=entry.data,
+                    is_extended_id=entry.is_extended_id,
+                    is_fd=entry.frame_type == "FD",
+                    is_remote_frame=entry.frame_type == "RTR",
+                    is_error_frame=entry.frame_type == "Error",
+                    is_rx=entry.direction == "Rx",
+                    dlc=entry.dlc,
+                    timestamp=entry.timestamp,
+                    bus=entry.bus,
+                )
+                direction = "Rx" if entry.direction == "Rx" else "Tx"
+                writer.write(msg, direction=direction)
+
+        return trc_path
+    except Exception as e:
+        print(f"Error exporting CTB to TRC: {e}")
+        return None
 
 
 class _DiskWriterThread(QThread):
@@ -100,8 +194,13 @@ class _DiskWriterThread(QThread):
 
             elif op == "stop":
                 if writer is not None:
+                    ctb_path = writer.path
                     writer.close()
                     writer = None
+                    # Export CTB to TRC format
+                    trc_path = _export_ctb_to_trc(ctb_path)
+                    if trc_path is not None:
+                        self.file_changed.emit(str(trc_path))
 
             elif op == "sync":
                 _, event = item
@@ -262,6 +361,35 @@ class TraceModel(QAbstractTableModel):
         self.endResetModel()
         self.file_changed.emit("")
 
+    def load_trace_file(self, path: str | Path):
+        """Load a pre-existing trace file (CTB format) into the model.
+
+        Clears the current trace and loads the specified CTB file for viewing.
+        This is used when opening saved trace files from the project.
+
+        Args:
+            path: Path to the .ctb trace file to load.
+        """
+        path_str = str(path)
+        self.clear()
+        self._current_file = path_str
+        self._store_reader = TraceStoreReader(path_str)
+
+        # Load the row count from the store
+        if self._store_reader:
+            self._total_rows = self._store_reader.row_count()
+            # Populate ring buffer with first rows for display
+            if self._total_rows > 0:
+                first_rows = self._store_reader.read_range(0, min(RING_BUFFER_SIZE, self._total_rows))
+                for entry in first_rows:
+                    self._ring.append((len(self._ring), entry))
+                    self._ring_map[len(self._ring_map)] = entry
+                self.beginResetModel()
+                self.endResetModel()
+
+        self._page_cache.clear()
+        self.file_changed.emit(path_str)
+
     def on_message(self, msg: CanMessage, direction: str = "Rx"):
         if not self._recording:
             return
@@ -304,6 +432,7 @@ class TraceModel(QAbstractTableModel):
                 direction=direction,
                 frame_type=msg.frame_type,
                 dlc=msg.dlc,
+                length=len(msg.data),
                 data=msg.data,
             )
             self._disk_thread.cmd_write(entry)
@@ -401,7 +530,7 @@ class TraceModel(QAbstractTableModel):
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
             return COLUMNS[section]
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.TextAlignmentRole:
-            if section == 7:
+            if section == 8:
                 return int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         return None
 
@@ -432,6 +561,8 @@ class TraceModel(QAbstractTableModel):
             case 6:
                 return entry.dlc
             case 7:
+                return entry.length
+            case 8:
                 return " ".join(f"{b:02X}" for b in entry.data)
         return None
 

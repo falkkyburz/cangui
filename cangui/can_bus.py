@@ -182,7 +182,7 @@ class CanBus:
         """Transmit a CAN frame on the bus.
 
         Silently does nothing when the bus is not connected.  DLC trimming
-        ensures that ``data`` is never longer than ``dlc`` bytes, which is
+        ensures that ``data`` matches the DLC-implied length, which is
         required by some hardware drivers.
 
         Args:
@@ -194,12 +194,27 @@ class CanBus:
         """
         if self._bus is None:
             return
-        data = msg.data[:msg.dlc] if msg.dlc else msg.data
+        def _dlc_to_length(dlc: int) -> int:
+            if dlc <= 8:
+                return dlc
+            mapping = {9: 12, 10: 16, 11: 20, 12: 24, 13: 32, 14: 48, 15: 64}
+            return mapping.get(dlc, dlc)
+
+        dlc = int(msg.dlc or 0)
+        expected_len = _dlc_to_length(dlc) if (msg.is_fd or dlc > 8) else dlc
+        if expected_len <= 0:
+            data = msg.data
+        elif len(msg.data) > expected_len:
+            data = msg.data[:expected_len]
+        elif len(msg.data) < expected_len:
+            data = msg.data + (b"\x00" * (expected_len - len(msg.data)))
+        else:
+            data = msg.data
         can_msg = can.Message(
             arbitration_id=msg.arbitration_id,
             data=data,
             is_extended_id=msg.is_extended_id,
-            is_fd=msg.is_fd,
+            is_fd=msg.is_fd or dlc > 8,
             is_remote_frame=msg.is_remote_frame,
         )
         self._bus.send(can_msg)

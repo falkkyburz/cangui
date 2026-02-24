@@ -633,6 +633,32 @@ class MainWindow(QMainWindow):
             ))
             return False
 
+        needs_fd = msg.is_fd or msg.dlc > 8 or len(msg.data) > 8
+        if needs_fd and not target.config.fd:
+            self._tx_send_result.emit(_TxSendResult(
+                msg=CanMessage(
+                    arbitration_id=msg.arbitration_id,
+                    data=bytes(msg.data),
+                    is_extended_id=msg.is_extended_id,
+                    is_fd=msg.is_fd,
+                    is_remote_frame=msg.is_remote_frame,
+                    is_error_frame=msg.is_error_frame,
+                    is_rx=False,
+                    dlc=msg.dlc,
+                    timestamp=msg.timestamp,
+                    bus=msg.bus,
+                    channel=target.config.channel,
+                    row=msg.row,
+                ),
+                requested_data=requested_data,
+                actual_data=bytes(msg.data),
+                success=False,
+                error="CAN FD disabled on connection",
+                connection_name=target.name,
+                endpoint=f"{target.config.interface}:{target.config.channel}",
+            ))
+            return False
+
         if self._script_plugin.is_loaded:
             data = self._script_plugin.apply_tx(msg.arbitration_id, msg.data)
             if data != msg.data:
@@ -704,7 +730,7 @@ class MainWindow(QMainWindow):
         row = result.msg.row
         if row >= 0:
             if self._commit_plugin_tx_to_raw and result.actual_data != result.requested_data:
-                idx = self._tx_model.index(row, 6)
+                idx = self._tx_model.index(row, 7)
                 self._tx_model.setData(
                     idx,
                     " ".join(f"{b:02X}" for b in result.actual_data),
@@ -765,6 +791,7 @@ class MainWindow(QMainWindow):
             bus=effective_bus,
             can_id=can_id,
             is_extended_id=is_extended,
+            dlc=dlc,
             length=dlc,
             symbol=symbol,
             raw_data=bytearray(dlc),
@@ -793,6 +820,7 @@ class MainWindow(QMainWindow):
         self._project_win.refresh()
         self._rx_model.refresh_symbols()
         self._tx_model.refresh_signals()
+        self._main_tabs.setCurrentWidget(self._database_win)
 
     def _remove_project_file(self, path: str, category: str):
         """Remove a file from the project and unload it from active managers."""
@@ -899,6 +927,7 @@ class MainWindow(QMainWindow):
                 bus=tx.get("bus", 1),
                 can_id=tx.get("can_id", 0),
                 is_extended_id=tx.get("is_extended_id", False),
+                dlc=tx.get("dlc", 8),
                 length=tx.get("length", 8),
                 symbol=tx.get("symbol", ""),
                 raw_data=raw,
@@ -1019,6 +1048,7 @@ class MainWindow(QMainWindow):
                 "bus": item.bus,
                 "can_id": item.can_id,
                 "is_extended_id": item.is_extended_id,
+                "dlc": item.dlc,
                 "length": item.length,
                 "symbol": item.symbol,
                 "raw_data": item.raw_data.hex(),
@@ -1134,32 +1164,49 @@ class MainWindow(QMainWindow):
         writer.close()
 
     def _load_trace(self, path: str):
-        """Load and begin replaying a trace file through the dispatcher.
+        """Load a trace file and display it in the Trace tab.
 
-        Creates a :class:`~cangui.worker_trace_player.TracePlayer` that feeds
-        played messages to both the TraceModel and the MessageDispatcher so
-        that decoded signal views update during replay.
+        Supports .ctb, .trc, and .blf file formats:
+        - .ctb files are loaded directly into the Trace tab for browsing
+        - .trc and .blf files are converted to .ctb format first, then loaded
+
+        The conversion creates a .ctb file next to the original file (if it
+        doesn't already exist) and automatically adds it to the project.
 
         Args:
-            path: Absolute path to the trace file to replay.
+            path: Absolute path to the trace file (.ctb, .trc, or .blf).
         """
-        reader = TraceReader(path)
-        if not reader.has_entries():
+        from pathlib import Path
+        from cangui.model_trace import _convert_trc_to_ctb
+
+        path_obj = Path(path)
+        suffix = path_obj.suffix.lower()
+
+        # Handle .ctb files directly
+        if suffix == ".ctb":
+            self._trace_model.load_trace_file(str(path_obj))
+            self._trace_win.set_replay_state(False)
             return
-        # Stop any existing replay
-        if self._trace_player is not None:
-            self._trace_player.stop()
-        self._trace_player = TracePlayer(reader, self)
-        self._trace_player.message_played.connect(self._trace_model.on_message)
-        self._trace_player.message_played.connect(
-            lambda msg, _: self._dispatcher.dispatch(msg)
-        )
-        self._trace_player.finished_playback.connect(self._on_replay_finished)
-        self._trace_model.clear()
-        self._trace_model.start()
-        self._trace_player.speed = self._trace_win.speed_factor
-        self._trace_win.set_replay_state(True)
-        self._trace_player.start()
+
+        # Convert .trc and .blf files to .ctb format
+        if suffix in (".trc", ".blf"):
+            ctb_path = path_obj.with_suffix(".ctb")
+            if not ctb_path.exists():
+                print(f"Converting {path} to CTB format...")
+                if not _convert_trc_to_ctb(path_obj, ctb_path):
+                    print(f"Failed to convert {path} to CTB format")
+                    return
+            # Add the CTB file to the project
+            self._project.add_trace_file(str(ctb_path))
+            self._project_win.refresh()
+            # Load the CTB file directly
+            self._trace_model.load_trace_file(str(ctb_path))
+            self._trace_win.set_replay_state(False)
+            return
+
+        # Fallback for unknown formats (shouldn't happen with current dialog filters)
+        print(f"Unsupported trace file format: {suffix}")
+        return
 
     def _on_replay_finished(self):
         """Stop the trace model and reset the replay UI state when playback ends."""

@@ -57,6 +57,7 @@ class TxMessageItem:
         can_id: CAN arbitration ID.
         is_extended_id: True for 29-bit extended IDs.
         frame_type: Frame type string, e.g. ``"Data"`` or ``"Remote"``.
+        dlc: Data length code (0–15). May differ from payload length for CAN FD.
         length: Payload byte length (0–64).
         symbol: DBC message name resolved from the database, if available.
         raw_data: Current payload as a mutable bytearray.
@@ -74,6 +75,7 @@ class TxMessageItem:
     can_id: int = 0
     is_extended_id: bool = False
     frame_type: str = "Data"
+    dlc: int = 8
     length: int = 8
     symbol: str = ""
     raw_data: bytearray = field(default_factory=lambda: bytearray(8))
@@ -86,7 +88,7 @@ class TxMessageItem:
     last_sent_data: bytes | None = None  # set by script plugin feedback; display-only
 
 
-COLUMNS = ["Bus", "ID (hex)", "Ext", "Type", "DLC", "Symbol",
+COLUMNS = ["Bus", "ID (hex)", "Ext", "Type", "DLC", "Length", "Symbol",
            "Data (hex)", "Cycle Time", "Count", "Trigger", "Creator"]
 
 _DRAG_MIME = "application/x-cangui-rows"
@@ -239,10 +241,10 @@ class TxMessageModel(QAbstractItemModel):
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
         """Return display, edit, or check-state data for the given cell.
 
-        For top-level rows, the Extended (col 2) and Cycle-Enable (col 7)
+        For top-level rows, the Extended (col 2) and Cycle-Enable (col 8)
         columns use ``CheckStateRole``; all other supported columns use
         ``DisplayRole``/``EditRole``.  Signal child rows expose only the Name
-        (col 5) and Value (col 6) columns.
+        (col 6) and Value (col 7) columns.
 
         Args:
             index: Cell position in the model.
@@ -263,8 +265,12 @@ class TxMessageModel(QAbstractItemModel):
             if role == Qt.ItemDataRole.CheckStateRole:
                 if col == 2:
                     return Qt.CheckState.Checked if item.is_extended_id else Qt.CheckState.Unchecked
-                if col == 7:
+                if col == 8:
                     return Qt.CheckState.Checked if item.cycle_enabled else Qt.CheckState.Unchecked
+
+            if role == Qt.ItemDataRole.UserRole and col == 7:
+                display = item.last_sent_data if item.last_sent_data is not None else item.raw_data
+                return bytes(display[:item.length])
 
             if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
                 match col:
@@ -275,15 +281,16 @@ class TxMessageModel(QAbstractItemModel):
                         return f"{item.can_id:03X}"
                     case 2: return None  # checkbox only
                     case 3: return item.frame_type
-                    case 4: return item.length
-                    case 5: return item.symbol
-                    case 6:
+                    case 4: return item.dlc
+                    case 5: return item.length
+                    case 6: return item.symbol
+                    case 7:
                         display = item.last_sent_data if item.last_sent_data is not None else item.raw_data
                         return " ".join(f"{b:02X}" for b in display[:item.length])
-                    case 7: return item.cycle_time_ms
-                    case 8: return item.count
-                    case 9: return "Time" if item.cycle_enabled else "Wait"
-                    case 10: return item.creator
+                    case 8: return item.cycle_time_ms
+                    case 9: return item.count
+                    case 10: return "Time" if item.cycle_enabled else "Wait"
+                    case 11: return item.creator
         else:
             # Signal child row
             parent_row = index.internalId() - 1
@@ -296,14 +303,14 @@ class TxMessageModel(QAbstractItemModel):
 
             if role == Qt.ItemDataRole.UserRole:
                 # Return the choices list for the combobox delegate (col 6 only)
-                if col == 6:
+                if col == 7:
                     return sig.choices
                 return None
 
             if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
                 match col:
-                    case 5: return _mux_prefix(sig) + sig.name
-                    case 6:
+                    case 6: return _mux_prefix(sig) + sig.name
+                    case 7:
                         if sig.choices:
                             val_str = str(sig.value)
                             for choice in sig.choices:
@@ -321,8 +328,8 @@ class TxMessageModel(QAbstractItemModel):
     def flags(self, index: QModelIndex):
         """Return interaction flags for the given cell.
 
-        Top-level columns 2 (Ext) and 7 (Cycle Enable) are checkable.  Columns
-        0, 1, 4, 5, 6, 7 are inline-editable.  Signal child column 6 (Value)
+        Top-level columns 2 (Ext) and 8 (Cycle Enable) are checkable.  Columns
+        0, 1, 4, 5, 6, 7, 8 are inline-editable.  Signal child column 7 (Value)
         is editable.
 
         Args:
@@ -336,14 +343,14 @@ class TxMessageModel(QAbstractItemModel):
             return flags
 
         if self._is_top_level(index):
-            if index.column() in (2, 7):
+            if index.column() in (2, 8):
                 flags |= Qt.ItemFlag.ItemIsUserCheckable
-            if index.column() in (0, 1, 4, 5, 6, 7):
+            if index.column() in (0, 1, 4, 5, 6, 7, 8):
                 flags |= Qt.ItemFlag.ItemIsEditable
             flags |= Qt.ItemFlag.ItemIsDragEnabled
         else:
-            # Signal child rows: data column (6) is editable; not draggable
-            if index.column() == 6:
+            # Signal child rows: data column (7) is editable; not draggable
+            if index.column() == 7:
                 flags |= Qt.ItemFlag.ItemIsEditable
 
         flags |= Qt.ItemFlag.ItemIsDropEnabled
@@ -411,7 +418,7 @@ class TxMessageModel(QAbstractItemModel):
         """Handle writes to top-level message row cells.
 
         Processes checkboxes for the Ext and Cycle Enable columns, and inline
-        edits for Bus, CAN-ID, DLC, Symbol, Data, and Cycle Time.  CAN-ID and
+        edits for Bus, CAN-ID, DLC, Length, Symbol, Data, and Cycle Time.  CAN-ID and
         Symbol changes trigger a DBC look-up and signal rebuild.
 
         Args:
@@ -434,10 +441,10 @@ class TxMessageModel(QAbstractItemModel):
                 id_idx = self.index(index.row(), 1)
                 self.dataChanged.emit(id_idx, index)
                 return True
-            if col == 7:
+            if col == 8:
                 item.cycle_enabled = Qt.CheckState(value) == Qt.CheckState.Checked
                 # Notify both the checkbox column and the Trigger column
-                trigger_idx = self.index(index.row(), 9)
+                trigger_idx = self.index(index.row(), 10)
                 self.dataChanged.emit(index, trigger_idx)
                 return True
 
@@ -461,16 +468,19 @@ class TxMessageModel(QAbstractItemModel):
                     self._rebuild_signals(index.row())
                 case 4:
                     try:
-                        length = int(value)
-                        if 0 <= length <= 64:
-                            item.length = length
-                            if len(item.raw_data) < length:
-                                item.raw_data.extend(b'\x00' * (length - len(item.raw_data)))
-                            elif len(item.raw_data) > length:
-                                item.raw_data = item.raw_data[:length]
+                        dlc = int(value)
+                        if 0 <= dlc <= 15:
+                            item.dlc = dlc
                     except (ValueError, TypeError):
                         return False
                 case 5:
+                    try:
+                        length = int(value)
+                        if 0 <= length <= 64:
+                            self._set_length(item, length, sync_dlc=True)
+                    except (ValueError, TypeError):
+                        return False
+                case 6:
                     name = str(value).strip()
                     if not name or self._decoder is None:
                         return False
@@ -481,16 +491,16 @@ class TxMessageModel(QAbstractItemModel):
                     item.last_sent_data = None
                     self._resolve_from_db(item)
                     self._rebuild_signals(index.row())
-                case 6:
+                case 7:
                     try:
                         data = bytes.fromhex(str(value).replace(" ", ""))
                         item.raw_data = bytearray(data)
-                        item.length = len(data)
+                        self._set_length(item, len(data), sync_dlc=True)
                         item.last_sent_data = None
                     except ValueError:
                         return False
                     self._redecode_signals(index.row())
-                case 7:
+                case 8:
                     try:
                         item.cycle_time_ms = int(value)
                     except (ValueError, TypeError):
@@ -498,7 +508,7 @@ class TxMessageModel(QAbstractItemModel):
                 case _:
                     return False
             # CAN-ID / Symbol change updates the whole row (symbol, length, data, cycle)
-            if col in (1, 5):
+            if col in (1, 6):
                 left = self.index(index.row(), 0)
                 right = self.index(index.row(), self.columnCount() - 1)
                 self.dataChanged.emit(left, right)
@@ -508,21 +518,21 @@ class TxMessageModel(QAbstractItemModel):
         return False
 
     def _set_signal_data(self, index, value, role):
-        """Handle writes to signal child row cells (column 6 only).
+        """Handle writes to signal child row cells (column 7 only).
 
         Parses the entered value, strips a trailing unit string if present,
         updates the signal, re-encodes all active signals into ``raw_data``,
         then redecodes so displayed values snap to quantized DBC values.
 
         Args:
-            index: Signal child cell position (must be column 6).
+            index: Signal child cell position (must be column 7).
             value: New value string (may include unit suffix).
             role: Must be ``EditRole``; other roles are rejected.
 
         Returns:
             ``True`` if the write was accepted, ``False`` otherwise.
         """
-        if role != Qt.ItemDataRole.EditRole or index.column() != 6:
+        if role != Qt.ItemDataRole.EditRole or index.column() != 7:
             return False
 
         parent_row = index.internalId() - 1
@@ -556,10 +566,34 @@ class TxMessageModel(QAbstractItemModel):
 
     # -- Signal / DBC helpers --
 
+    @staticmethod
+    def _dlc_from_length(length: int) -> int | None:
+        """Map payload length to a CAN/CAN FD DLC when possible."""
+        if 0 <= length <= 8:
+            return length
+        mapping = {12: 9, 16: 10, 20: 11, 24: 12, 32: 13, 48: 14, 64: 15}
+        return mapping.get(length)
+
+    @staticmethod
+    def _set_length(item: TxMessageItem, length: int, sync_dlc: bool) -> None:
+        """Update payload length and optionally keep DLC aligned."""
+        old_length = item.length
+        item.length = length
+        if len(item.raw_data) < length:
+            item.raw_data.extend(b"\x00" * (length - len(item.raw_data)))
+        elif len(item.raw_data) > length:
+            item.raw_data = item.raw_data[:length]
+        if sync_dlc:
+            old_mapped = TxMessageModel._dlc_from_length(old_length)
+            if item.dlc in (old_length, old_mapped):
+                mapped = TxMessageModel._dlc_from_length(length)
+                if mapped is not None:
+                    item.dlc = mapped
+
     def _resolve_from_db(self, item: TxMessageItem, override: bool = True):
         """Apply database info to item.
 
-        If override is True, DLC/cycle_time/raw_data are overwritten from the
+        If override is True, DLC/length/cycle_time/raw_data are overwritten from the
         database (used for new messages and CAN-ID changes).  If False, only
         the symbol name is updated (used for DBC reload on existing messages).
         """
@@ -573,7 +607,8 @@ class TxMessageModel(QAbstractItemModel):
         info = self._decoder.get_message_info(item.can_id)
         if info is not None:
             length, cycle_time = info
-            item.length = length
+            item.dlc = self._dlc_from_length(length) or item.dlc
+            self._set_length(item, length, sync_dlc=False)
             if cycle_time is not None:
                 item.cycle_time_ms = int(cycle_time)
             # Encode initial signal values into raw_data.
@@ -591,6 +626,7 @@ class TxMessageModel(QAbstractItemModel):
                     signal_data[s.name] = s.value
             encoded = self._decoder.encode(item.can_id, signal_data)
             item.raw_data = bytearray(encoded) if encoded else bytearray(length)
+            self._set_length(item, len(item.raw_data), sync_dlc=False)
 
     def _rebuild_signals(self, row: int):
         """Rebuild signal children from the decoder for a given message row."""
@@ -631,11 +667,7 @@ class TxMessageModel(QAbstractItemModel):
             if info is not None:
                 msg_len, _ = info
                 if msg_len >= 0 and (item.length != msg_len or len(item.raw_data) != msg_len):
-                    if len(item.raw_data) < msg_len:
-                        item.raw_data.extend(b"\x00" * (msg_len - len(item.raw_data)))
-                    else:
-                        item.raw_data = item.raw_data[:msg_len]
-                    item.length = msg_len
+                    self._set_length(item, msg_len, sync_dlc=False)
                     item.last_sent_data = None
 
             # Decode current raw_data to get actual signal values
@@ -667,7 +699,7 @@ class TxMessageModel(QAbstractItemModel):
             return
         parent_idx = self.index(row, 0)
         for child_row in changed_rows:
-            idx = self.index(child_row, 6, parent_idx)
+            idx = self.index(child_row, 7, parent_idx)
             self.dataChanged.emit(idx, idx)
 
     def _encode_signals(self, row: int):
@@ -701,7 +733,7 @@ class TxMessageModel(QAbstractItemModel):
         encoded = self._decoder.encode(item.can_id, signal_data)
         if encoded is not None:
             item.raw_data = bytearray(encoded)
-            item.length = len(item.raw_data)
+            self._set_length(item, len(item.raw_data), sync_dlc=True)
             # Notify parent row data changed (raw_data column)
             top_left = self.index(row, 0)
             bottom_right = self.index(row, self.columnCount() - 1)
@@ -718,6 +750,7 @@ class TxMessageModel(QAbstractItemModel):
         item = TxMessageItem(
             bus=bus,
             can_id=0,
+            dlc=8,
             length=8,
             raw_data=bytearray(8),
             cycle_time_ms=100,
@@ -729,7 +762,7 @@ class TxMessageModel(QAbstractItemModel):
 
         Args:
             item: :class:`TxMessageItem` to add.
-            resolve: When ``True``, apply DBC info (DLC, cycle time, initial
+            resolve: When ``True``, apply DBC info (DLC/length, cycle time, initial
                 payload) to the item before inserting.  Set to ``False`` when
                 adding a pre-configured item that should not be overwritten.
         """
@@ -842,8 +875,8 @@ class TxMessageModel(QAbstractItemModel):
             item.count = 0
         if self._items:
             self.dataChanged.emit(
-                self.index(0, 8),
-                self.index(len(self._items) - 1, 8),
+                self.index(0, 9),
+                self.index(len(self._items) - 1, 9),
             )
 
     def update_last_sent(self, row: int, data: bytes):
@@ -890,7 +923,7 @@ class TxMessageModel(QAbstractItemModel):
                     self._deferred_last_sent[row] = data
                     continue
                 self._items[row].last_sent_data = data
-                idx = self.index(row, 6)
+                idx = self.index(row, 7)
                 self.dataChanged.emit(idx, idx)
                 self._redecode_signals(row, data)
         if self._pending_last_sent:
@@ -904,7 +937,7 @@ class TxMessageModel(QAbstractItemModel):
         """
         if 0 <= row < len(self._items):
             self._items[row].count += 1
-            idx = self.index(row, 8)  # Count column
+            idx = self.index(row, 9)  # Count column
             self.dataChanged.emit(idx, idx)
 
     def increment_counts(self, counts: dict[int, int]):
@@ -920,8 +953,8 @@ class TxMessageModel(QAbstractItemModel):
                     max_row = row
         if min_row is not None:
             self.dataChanged.emit(
-                self.index(min_row, 8),
-                self.index(max_row, 8),
+                self.index(min_row, 9),
+                self.index(max_row, 9),
             )
 
     def refresh_signals(self):

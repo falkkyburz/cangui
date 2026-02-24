@@ -8,122 +8,24 @@
   "tx_messages": [
     {
       "bus": 1,
-      "can_id": 1280,
+      "can_id": 1792,
       "is_extended_id": false,
-      "length": 8,
-      "symbol": "BitMatrix",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 1280,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "BitMatrix",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 1280,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "BitMatrix",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 1280,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "BitMatrix",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 1280,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "BitMatrix",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 1280,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "BitMatrix",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 1,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 256,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "EngineData",
-      "raw_data": "800c822601000000",
+      "dlc": 6,
+      "length": 6,
+      "symbol": "E2E_SensorData",
+      "raw_data": "5565e02e0000",
       "cycle_time_ms": 100,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 512,
-      "is_extended_id": false,
-      "length": 4,
-      "symbol": "VehicleSpeed",
-      "raw_data": "70173930",
-      "cycle_time_ms": 200,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 768,
-      "is_extended_id": false,
-      "length": 3,
-      "symbol": "BrakeData",
-      "raw_data": "00f000",
-      "cycle_time_ms": 50,
       "cycle_enabled": true
     },
     {
       "bus": 1,
       "can_id": 1024,
       "is_extended_id": false,
+      "dlc": 2,
       "length": 2,
       "symbol": "Lights",
-      "raw_data": "0300",
+      "raw_data": "0100",
       "cycle_time_ms": 500,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 1536,
-      "is_extended_id": false,
-      "length": 8,
-      "symbol": "DiagResponse",
-      "raw_data": "0000000000000000",
-      "cycle_time_ms": 100,
-      "cycle_enabled": true
-    },
-    {
-      "bus": 1,
-      "can_id": 1792,
-      "is_extended_id": false,
-      "length": 6,
-      "symbol": "E2E_SensorData",
-      "raw_data": "5565e02e0000",
-      "cycle_time_ms": 100,
       "cycle_enabled": true
     }
   ],
@@ -156,7 +58,7 @@
       "name": "Extended"
     }
   ],
-  "workspace_state": "{\"h_splitter\": [1078, 459], \"v_splitter\": [310, 716], \"rxtx_splitter\": [378, 407, 161], \"main_tabs\": {\"order\": [\"Receive/Transmit [X]\", \"Database [D]\", \"Trace [T]\", \"Plot [P]\", \"Diagnostics [4]\"], \"current\": 0}, \"small_tabs\": {\"order\": [\"Project Manager [M]\", \"Log [L]\"], \"current\": 0}, \"list_tabs\": {\"order\": [\"Watch [W]\", \"Watch DID [7]\", \"DTC [8]\", \"Rx Filter [F]\", \"Plot List [B]\", \"Settings [S]\", \"Help [H]\"], \"current\": 0}}",
+  "workspace_state": "{\"h_splitter\": [1076, 461], \"v_splitter\": [308, 718], \"rxtx_splitter\": [474, 311, 161], \"main_tabs\": {\"order\": [\"Receive/Transmit [X]\", \"Database [D]\", \"Trace [T]\", \"Plot [P]\", \"Diagnostics [4]\"], \"current\": 0}, \"small_tabs\": {\"order\": [\"Project Manager [M]\", \"Log [L]\"], \"current\": 0}, \"list_tabs\": {\"order\": [\"Watch [W]\", \"Watch DID [7]\", \"DTC [8]\", \"Rx Filter [F]\", \"Plot List [B]\", \"Settings [S]\", \"Help [H]\"], \"current\": 0}}",
   "settings": {
     "general": {
       "float_format": "f",
@@ -172,6 +74,9 @@
       "time_window": 10.0,
       "max_display_points": 5000,
       "update_interval_ms": 50
+    },
+    "script": {
+      "log_throttle_s": 1.0
     },
     "tabs": {
       "receive_transmit": true,
@@ -192,7 +97,7 @@
   },
   "plot_files": [],
   "database_editor_file": "",
-  "script_plugin_file": "E2E.script.py",
+  "script_plugin_file": "example.script.py",
   "seedkey_file": "",
   "version": 1
 }

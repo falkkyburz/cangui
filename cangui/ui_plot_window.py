@@ -55,6 +55,10 @@ class PlotWindow(BaseDockWindow):
         super().__init__(parent)
         self._plot_service = plot_service
         self._curves: dict[tuple[int, str], pg.PlotDataItem] = {}
+        self._view_boxes: dict[tuple[int, str], pg.ViewBox] = {}
+        self._axis_items: dict[tuple[int, str], pg.AxisItem] = {}
+        self._axis_order: list[tuple[int, str]] = []
+        self._axes_in_layout: set[tuple[int, str]] = set()
         self._auto_range = True
 
         # Toolbar
@@ -109,9 +113,14 @@ class PlotWindow(BaseDockWindow):
         self._plot_widget.setBackground("w")
         self._plot_widget.showGrid(x=True, y=True, alpha=0.3)
         self._plot_widget.setLabel("bottom", "Time", "s")
-        self._plot_widget.addLegend()
+        self._legend = self._plot_widget.addLegend()
         self._plot_widget.setMouseEnabled(x=True, y=True)
         self._layout.addWidget(self._plot_widget)
+        self._plot_item = self._plot_widget.getPlotItem()
+        self._main_vb = self._plot_item.vb
+        self._plot_item.showAxis("right", False)
+        self._plot_item.showAxis("left", False)
+        self._main_vb.sigResized.connect(self._update_viewboxes)
 
         # Keyboard shortcuts for pan/zoom
         self._setup_shortcuts()
@@ -141,13 +150,14 @@ class PlotWindow(BaseDockWindow):
             factor: Scale multiplier (< 1 zooms in, > 1 zooms out).
         """
         self._auto_range_cb.setChecked(False)
-        vb = self._plot_widget.getViewBox()
-        vb.scaleBy((factor, factor))
+        self._main_vb.scaleBy((factor, 1.0))
+        for vb in self._view_boxes.values():
+            vb.scaleBy((1.0, factor))
 
     def _reset_range(self):
         """Re-enable auto-range and check the auto-range checkbox."""
         self._auto_range_cb.setChecked(True)
-        self._plot_widget.enableAutoRange()
+        self._set_auto_range(True)
 
     @property
     def primary_view(self):
@@ -172,10 +182,11 @@ class PlotWindow(BaseDockWindow):
         label = f"{signal_name}"
         if unit:
             label += f" ({unit})"
-        curve = self._plot_widget.plot(
-            pen=pg.mkPen(color, width=width),
-            name=label,
-        )
+        curve = pg.PlotDataItem(pen=pg.mkPen(color, width=width), name=label)
+        self._add_axis_for_signal(key, signal_name, unit, color)
+        self._view_boxes[key].addItem(curve)
+        if self._legend is not None:
+            self._legend.addItem(curve, label)
         self._curves[key] = curve
 
     def remove_signal_curve(self, arb_id: int, signal_name: str):
@@ -183,7 +194,9 @@ class PlotWindow(BaseDockWindow):
         key = (arb_id, signal_name)
         curve = self._curves.pop(key, None)
         if curve is not None:
-            self._plot_widget.removeItem(curve)
+            if self._legend is not None:
+                self._legend.removeItem(curve)
+            self._remove_axis_for_signal(key)
             self._plot_service.remove_signal(arb_id, signal_name)
 
     def update_curve_style(self, arb_id: int, signal_name: str, settings: dict):
@@ -197,13 +210,21 @@ class PlotWindow(BaseDockWindow):
         visible = settings.get("visible", True)
         curve.setPen(pg.mkPen(color, width=width))
         curve.setVisible(visible)
+        axis = self._axis_items.get(key)
+        if axis is not None:
+            pen = pg.mkPen(color)
+            axis.setPen(pen)
+            axis.setTextPen(pen)
 
     def clear_all_curves(self):
         """Remove all curves."""
         self._plot_service.clear()
-        for curve in self._curves.values():
-            self._plot_widget.removeItem(curve)
+        for key, curve in list(self._curves.items()):
+            if self._legend is not None:
+                self._legend.removeItem(curve)
+            self._remove_axis_for_signal(key)
         self._curves.clear()
+        self._axes_in_layout.clear()
 
     def _on_clear_data(self):
         """Clear plot data but keep curves."""
@@ -224,10 +245,7 @@ class PlotWindow(BaseDockWindow):
             checked: ``True`` to enable auto-range, ``False`` to disable.
         """
         self._auto_range = checked
-        if checked:
-            self._plot_widget.enableAutoRange()
-        else:
-            self._plot_widget.disableAutoRange()
+        self._set_auto_range(checked)
 
     def _on_start(self):
         """Emit :attr:`record_toggled` with ``True`` when the Start button is clicked."""
@@ -265,14 +283,97 @@ class PlotWindow(BaseDockWindow):
 
         Called every 50 ms by the update timer.  Skips curves that have not
         received new data since the last call to avoid redundant setData calls.
-        Re-enables auto-range after any update if auto-range is active.
+        Updates the X-axis range to implement rolling window scrolling when
+        auto-range is enabled.
         """
         any_updated = False
+        latest_time = None
         for key, curve in self._curves.items():
             data = self._plot_service.consume_display_data(key)
             if data is None:
                 continue
             curve.setData(data[0], data[1])
             any_updated = True
-        if any_updated and self._auto_range:
-            self._plot_widget.enableAutoRange()
+            # Track the latest timestamp for X-axis scrolling
+            if len(data[0]) > 0:
+                latest_time = max(latest_time or data[0][-1], data[0][-1])
+
+        if any_updated and self._auto_range and latest_time is not None:
+            # Set X-axis range to show the rolling time window
+            time_window = self._plot_service.time_window
+            x_min = latest_time - time_window
+            x_max = latest_time
+            self._main_vb.setXRange(x_min, x_max, padding=0)
+
+    def _add_axis_for_signal(self, key: tuple[int, str], label: str,
+                             unit: str, color: str):
+        """Create and register a dedicated Y axis + ViewBox for a signal."""
+        axis = pg.AxisItem("right")
+        axis.setLabel(label, units=unit)
+        pen = pg.mkPen(color)
+        axis.setPen(pen)
+        axis.setTextPen(pen)
+        vb = pg.ViewBox()
+        vb.setXLink(self._main_vb)
+        self._plot_item.scene().addItem(vb)
+        axis.linkToView(vb)
+        self._view_boxes[key] = vb
+        self._axis_items[key] = axis
+        self._axis_order.append(key)
+        self._reflow_axes()
+        self._update_viewboxes()
+
+    def _remove_axis_for_signal(self, key: tuple[int, str]):
+        """Remove the Y axis + ViewBox for a signal."""
+        axis = self._axis_items.pop(key, None)
+        vb = self._view_boxes.pop(key, None)
+        if axis is not None:
+            self._plot_item.layout.removeItem(axis)
+        if vb is not None:
+            scene = self._plot_item.scene()
+            if scene is not None:
+                scene.removeItem(vb)
+        if key in self._axis_order:
+            self._axis_order.remove(key)
+        self._axes_in_layout.discard(key)
+        self._reflow_axes()
+
+    def _reflow_axes(self):
+        """Pack all signal axes into consecutive layout columns."""
+        layout = self._plot_item.layout
+        # Only remove axes that are currently in the layout
+        for key in list(self._axes_in_layout):
+            axis = self._axis_items.get(key)
+            if axis is not None:
+                layout.removeItem(axis)
+        self._axes_in_layout.clear()
+        # Add axes in the correct order
+        base_col = 3  # 0=left axis, 1=plot, 2=right axis (hidden)
+        for idx, key in enumerate(self._axis_order):
+            axis = self._axis_items[key]
+            layout.addItem(axis, 2, base_col + idx)
+            self._axes_in_layout.add(key)
+
+    def _update_viewboxes(self):
+        """Keep all signal ViewBoxes aligned with the main plot geometry."""
+        rect = self._main_vb.sceneBoundingRect()
+        for vb in self._view_boxes.values():
+            vb.setGeometry(rect)
+            vb.linkedViewChanged(self._main_vb, vb.XAxis)
+
+    def _set_auto_range(self, enabled: bool):
+        """Enable/disable rolling window scrolling (X) and Y-axis auto-scaling per signal.
+
+        When enabled, the X-axis shows a fixed-width rolling time window (updated by
+        _update_plot) and each signal's Y-axis auto-scales to fit visible data.
+        When disabled, both axes freeze at their current positions.
+        """
+        if enabled:
+            # Don't use auto-range on X-axis; we manually set it in _update_plot for rolling window
+            self._main_vb.disableAutoRange(axis=pg.ViewBox.XAxis)
+            for vb in self._view_boxes.values():
+                vb.enableAutoRange(axis=pg.ViewBox.YAxis)
+        else:
+            self._main_vb.disableAutoRange(axis=pg.ViewBox.XAxis)
+            for vb in self._view_boxes.values():
+                vb.disableAutoRange(axis=pg.ViewBox.YAxis)

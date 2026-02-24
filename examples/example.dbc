@@ -6,6 +6,8 @@ BS_:
 
 BU_: ECU1 ECU2
 
+BA_DEF_ BO_ "VFrameFormat" ENUM "Standard","Extended";
+
 VAL_TABLE_ LightStateVT 0 "Off" 1 "Parking" 2 "LowBeam" 3 "Auto";
 VAL_TABLE_ TurnSignalVT 0 "Off" 1 "Left" 2 "Right" 3 "Reserved";
 
@@ -113,6 +115,65 @@ BO_ 1280 BitMatrix: 8 ECU1
  SG_ E2E_Counter : 36|4@1+ (1,0) [0|14] "" ECU2
  SG_ E2E_CRC : 40|8@1+ (1,0) [0|255] "" ECU2
 
+BO_ 2566869221 ExtIdStatus: 8 ECU1
+ SG_ ExtCounter : 0|16@1+ (1,0) [0|65535] "" ECU2
+ SG_ ExtVoltage : 16|16@1+ (0.001,0) [0|65.535] "V" ECU2
+ SG_ ExtState : 32|2@1+ (1,0) [0|3] "" ECU2
+BA_ "VFrameFormat" BO_ 2566869221 1;
+
+BO_ 1600 CanFdPayload: 64 ECU2
+ SG_ Block0 : 0|16@1+ (1,0) [0|65535] "" ECU1
+ SG_ Block1 : 16|16@1+ (1,0) [0|65535] "" ECU1
+ SG_ Block2 : 32|16@1+ (1,0) [0|65535] "" ECU1
+ SG_ Block3 : 48|16@1+ (1,0) [0|65535] "" ECU1
+ SG_ Block4 : 64|16@1+ (1,0) [0|65535] "" ECU1
+ SG_ Block5 : 80|16@1+ (1,0) [0|65535] "" ECU1
+ SG_ Block6 : 96|16@1+ (1,0) [0|65535] "" ECU1
+ SG_ Block7 : 112|16@1+ (1,0) [0|65535] "" ECU1
+
+BO_ 1601 CanFdLen12: 12 ECU2
+ SG_ Fd12_A : 0|32@1+ (1,0) [0|4294967295] "" ECU1
+ SG_ Fd12_B : 32|32@1+ (1,0) [0|4294967295] "" ECU1
+ SG_ Fd12_C : 64|32@1+ (1,0) [0|4294967295] "" ECU1
+
+BO_ 1602 CanFdLen16: 16 ECU2
+ SG_ Fd16_A : 0|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd16_B : 64|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+
+BO_ 1603 CanFdLen20: 20 ECU2
+ SG_ Fd20_A : 0|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd20_B : 64|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd20_C : 128|32@1+ (1,0) [0|4294967295] "" ECU1
+
+BO_ 1604 CanFdLen24: 24 ECU2
+ SG_ Fd24_A : 0|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd24_B : 64|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd24_C : 128|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+
+BO_ 1605 CanFdLen32: 32 ECU2
+ SG_ Fd32_A : 0|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd32_B : 64|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd32_C : 128|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd32_D : 192|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+
+BO_ 1606 CanFdLen48: 48 ECU2
+ SG_ Fd48_A : 0|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd48_B : 64|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd48_C : 128|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd48_D : 192|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd48_E : 256|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd48_F : 320|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+
+BO_ 1607 CanFdLen64: 64 ECU2
+ SG_ Fd64_A : 0|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd64_B : 64|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd64_C : 128|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd64_D : 192|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd64_E : 256|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd64_F : 320|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd64_G : 384|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+ SG_ Fd64_H : 448|64@1+ (1,0) [0|18446744073709551615] "" ECU1
+
 VAL_ 1024 Headlights 0 "Off" 1 "Parking" 2 "LowBeam" 3 "Auto";
 VAL_ 1024 TurnSignal 0 "Off" 1 "Left" 2 "Right" 3 "Reserved";
 VAL_ 1024 HazardLights 0 "Inactive" 1 "Active";
@@ -124,6 +185,15 @@ CM_ BO_ 768 "Brake system status";
 CM_ BO_ 1024 "Lighting control";
 CM_ BO_ 1280 "64 x 1-bit signals for decode performance testing";
 CM_ BO_ 1792 "E2E-protected sensor data (4-byte payload + counter nibble + CRC-8)";
+CM_ BO_ 2566869221 "Extended ID example (29-bit).";
+CM_ BO_ 1600 "CAN FD example with 64-byte payload.";
+CM_ BO_ 1601 "CAN FD example (DLC 9 -> 12 bytes).";
+CM_ BO_ 1602 "CAN FD example (DLC 10 -> 16 bytes).";
+CM_ BO_ 1603 "CAN FD example (DLC 11 -> 20 bytes).";
+CM_ BO_ 1604 "CAN FD example (DLC 12 -> 24 bytes).";
+CM_ BO_ 1605 "CAN FD example (DLC 13 -> 32 bytes).";
+CM_ BO_ 1606 "CAN FD example (DLC 14 -> 48 bytes).";
+CM_ BO_ 1607 "CAN FD example (DLC 15 -> 64 bytes).";
 CM_ SG_ 1792 E2E_Counter "Rolling 4-bit counter appended by E2E plugin (process_tx)";
 CM_ SG_ 1792 E2E_CRC "CRC-8/MAXIM over payload + counter, appended by E2E plugin";
 CM_ SG_ 256 EngineSpeed "Engine crankshaft speed";

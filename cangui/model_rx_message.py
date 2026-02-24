@@ -80,7 +80,8 @@ class RxMessageItem:
         is_extended_id: True for 29-bit extended frame IDs.
         is_error_frame: True when the frame is a CAN error frame.
         frame_type: Human-readable frame type string (e.g. ``"Data"``).
-        length: Data length code (DLC) of the most recently received frame.
+        dlc: Data length code (DLC) of the most recently received frame.
+        length: Actual payload length (may differ from DLC for CAN FD).
         symbol: DBC/ODX message name, or empty string if not found in the DB.
         raw_data: Raw payload bytes of the most recently received frame.
         timing_errors: Accumulated count of timing violations for this message.
@@ -96,6 +97,7 @@ class RxMessageItem:
     is_extended_id: bool = False
     is_error_frame: bool = False
     frame_type: str = ""
+    dlc: int = 0
     length: int = 0
     symbol: str = ""
     raw_data: bytes = b""
@@ -107,7 +109,7 @@ class RxMessageItem:
     signals: list[SignalItem] = field(default_factory=list)
 
 
-COLUMNS = ["Bus", "ID (hex)", "Ext", "Type", "DLC", "Symbol",
+COLUMNS = ["Bus", "ID (hex)", "Ext", "Type", "DLC", "Length", "Symbol",
            "Data (hex)", "Cycle Time", "Count", "Timing Errors"]
 
 STALE_TIMEOUT_S = 5.0   # seconds with no update before a row is greyed out
@@ -318,7 +320,7 @@ class RxMessageModel(QAbstractItemModel):
         Implements the ``QAbstractItemModel`` pure virtual.
 
         Top-level rows expose all ``COLUMNS`` fields of ``RxMessageItem``.
-        Child (signal) rows populate only columns 5 (Symbol/name) and 6
+        Child (signal) rows populate only columns 6 (Symbol/name) and 7
         (Data/value+unit); all other columns return ``None``.
 
         Special role handling:
@@ -368,6 +370,12 @@ class RxMessageModel(QAbstractItemModel):
                 return Qt.CheckState.Checked if item.is_extended_id else Qt.CheckState.Unchecked
             return None
 
+        if role == Qt.ItemDataRole.UserRole:
+            if self._is_top_level(index) and col == 7 and 0 <= index.row() < len(self._items):
+                item = self._items[index.row()]
+                return bytes(item.raw_data[:item.length])
+            return None
+
         if role == Qt.ItemDataRole.ToolTipRole:
             if not index.parent().isValid() and 0 <= index.row() < len(self._items):
                 item = self._items[index.row()]
@@ -391,12 +399,13 @@ class RxMessageModel(QAbstractItemModel):
                     return f"{item.can_id:03X}"
                 case 2: return None  # checkbox only
                 case 3: return item.frame_type
-                case 4: return item.length
-                case 5: return item.symbol
-                case 6: return " ".join(f"{b:02X}" for b in item.raw_data[:item.length])
-                case 7: return f"{item.cycle_time_ms:.1f}" if item.cycle_time_ms else ""
-                case 8: return item.count
-                case 9: return item.timing_errors if item.timing_errors else ""
+                case 4: return item.dlc
+                case 5: return item.length
+                case 6: return item.symbol
+                case 7: return " ".join(f"{b:02X}" for b in item.raw_data[:item.length])
+                case 8: return f"{item.cycle_time_ms:.1f}" if item.cycle_time_ms else ""
+                case 9: return item.count
+                case 10: return item.timing_errors if item.timing_errors else ""
         else:
             parent_row = index.internalId() - 1
             if parent_row >= len(self._items):
@@ -406,8 +415,8 @@ class RxMessageModel(QAbstractItemModel):
                 return None
             sig = sigs[index.row()]
             match col:
-                case 5: return _mux_prefix(sig) + sig.name
-                case 6:
+                case 6: return _mux_prefix(sig) + sig.name
+                case 7:
                     if sig.unit:
                         return f"{sig.value} {sig.unit}"
                     return sig.value
@@ -574,7 +583,8 @@ class RxMessageModel(QAbstractItemModel):
                     else:
                         item.cycle_time_ms = dt
                 item.raw_data = msg.data
-                item.length = msg.dlc
+                item.dlc = msg.dlc
+                item.length = len(msg.data)
                 item.count += 1
                 item.last_timestamp = now
                 item.last_seen_monotonic = time.monotonic()
@@ -588,7 +598,8 @@ class RxMessageModel(QAbstractItemModel):
                     is_extended_id=msg.is_extended_id,
                     is_error_frame=msg.is_error_frame,
                     frame_type=msg.frame_type,
-                    length=msg.dlc,
+                    dlc=msg.dlc,
+                    length=len(msg.data),
                     raw_data=msg.data,
                     count=1,
                     last_timestamp=msg.timestamp,
@@ -729,6 +740,18 @@ class RxMessageModel(QAbstractItemModel):
             if 0 <= parent_row < len(self._items):
                 return self._items[parent_row]
         return None
+
+    def get_item_at(self, index: QModelIndex) -> RxMessageItem | None:
+        """Get the message item for any index (top-level or child).
+
+        Args:
+            index: A model index (either top-level message or signal child row).
+
+        Returns:
+            The RxMessageItem for the row (or its parent if index is a child row),
+            or None if index is invalid.
+        """
+        return self.get_item(index)
 
     def get_signal_at(self, index: QModelIndex) -> tuple[RxMessageItem, SignalItem] | None:
         """Return the ``(RxMessageItem, SignalItem)`` pair for a signal child index.

@@ -32,7 +32,7 @@ class _TxSnapshot:
         can_id: Arbitration ID for the frame.
         raw_data: Payload bytes at the time the snapshot was taken.
         is_extended_id: ``True`` for 29-bit extended IDs.
-        length: DLC value.
+        dlc: DLC value.
         bus: Logical bus number for routing to the correct connection.
         cycle_time_ms: Transmission interval in milliseconds.
         cycle_enabled: ``True`` if the row's cyclic transmission is active.
@@ -42,7 +42,7 @@ class _TxSnapshot:
     can_id: int
     raw_data: bytes
     is_extended_id: bool
-    length: int
+    dlc: int
     bus: int
     cycle_time_ms: int
     cycle_enabled: bool
@@ -109,7 +109,7 @@ class CanTransmitter(QThread):
                 can_id=item.can_id,
                 raw_data=bytes(item.raw_data),
                 is_extended_id=item.is_extended_id,
-                length=item.length,
+                dlc=item.dlc,
                 bus=item.bus,
                 cycle_time_ms=item.cycle_time_ms,
                 cycle_enabled=item.cycle_enabled,
@@ -164,7 +164,8 @@ class CanTransmitter(QThread):
                         arbitration_id=item.can_id,
                         data=item.raw_data,
                         is_extended_id=item.is_extended_id,
-                        dlc=item.length,
+                        is_fd=item.dlc > 8 or len(item.raw_data) > 8,
+                        dlc=item.dlc,
                         bus=item.bus,
                         row=item.row,
                     )

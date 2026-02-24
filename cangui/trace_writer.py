@@ -141,7 +141,7 @@ class TraceWriter:
         offset = msg.timestamp - self._start_time
         msg_type = "1" if not msg.is_fd else "FD"
         can_id = f"{msg.arbitration_id:04X}"
-        dlc = len(msg.data)
+        dlc = msg.dlc if msg.dlc is not None else len(msg.data)
         data_str = " ".join(f"{b:02X}" for b in msg.data)
         self._file.write(
             f"  {self._msg_number:>6})  {offset:>12.3f} {msg_type:>2}  "

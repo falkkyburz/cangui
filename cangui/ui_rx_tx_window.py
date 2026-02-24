@@ -8,9 +8,10 @@ defined here as well.
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QHeaderView, QTreeView, QSplitter,
     QStyledItemDelegate, QToolBar, QLabel, QWidget, QVBoxLayout, QMenu, QAbstractItemView,
+    QTextEdit,
 )
-from PySide6.QtGui import QAction, QFont
-from PySide6.QtCore import Qt, Signal, QEvent, QObject, QSortFilterProxyModel, QTimer
+from PySide6.QtGui import QAction, QFont, QTextCursor
+from PySide6.QtCore import Qt, Signal, QEvent, QObject, QSortFilterProxyModel, QTimer, QModelIndex, QSize
 
 from cangui.model_rx_message import RxMessageModel
 from cangui.model_tx_message import TxMessageModel
@@ -87,15 +88,62 @@ class _ClickOutsideFilter(QObject):
         return widget is view or view.isAncestorOf(widget)
 
 
-class _HexFontDelegate(QStyledItemDelegate):
-    """Renders a column using a monospaced font for hex data display."""
+def _format_hex_bytes(data: bytes, expanded: bool, bytes_per_line: int = 12) -> str:
+    if not data:
+        return ""
+    parts = [f"{b:02X}" for b in data]
+    sep = "\u00A0"
+    if not expanded:
+        line = sep.join(parts[:bytes_per_line])
+        if len(parts) <= bytes_per_line:
+            return line
+        return line + sep + "..."
+    lines = [
+        sep.join(parts[i:i + bytes_per_line])
+        for i in range(0, len(parts), bytes_per_line)
+    ]
+    return "\n".join(lines)
+
+
+def _hex_size_hint(option, data_len: int, expanded: bool, bytes_per_line: int) -> QSize:
+    metrics = option.fontMetrics
+    line_height = metrics.lineSpacing()
+    if expanded:
+        lines = max(1, (data_len + bytes_per_line - 1) // bytes_per_line)
+    else:
+        lines = 1
+    height = line_height * lines + 4
+    return QSize(option.rect.width(), height)
+
+
+class _HexDataDelegate(QStyledItemDelegate):
+    """Renders hex data with optional multi-line expansion."""
+
+    def __init__(self, view, expanded_cb, bytes_per_line: int = 12):
+        super().__init__(view)
+        self._expanded_cb = expanded_cb
+        self._bytes_per_line = bytes_per_line
 
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
-        # Only top-level message rows in the Data (hex) column should be monospace.
-        if not index.parent().isValid():
-            option.font.setFamily("Courier New")
-            option.font.setStyleHint(QFont.StyleHint.Monospace)
+        if index.parent().isValid():
+            return
+        option.font.setFamily("Courier New")
+        option.font.setStyleHint(QFont.StyleHint.Monospace)
+        data = index.data(Qt.ItemDataRole.UserRole)
+        if data is None:
+            return
+        if not isinstance(data, (bytes, bytearray)):
+            return
+        expanded = bool(self._expanded_cb(index))
+        option.text = _format_hex_bytes(bytes(data), expanded, self._bytes_per_line)
+
+    def sizeHint(self, option, index):
+        data = index.data(Qt.ItemDataRole.UserRole)
+        if data is None or not isinstance(data, (bytes, bytearray)):
+            return super().sizeHint(option, index)
+        expanded = bool(self._expanded_cb(index))
+        return _hex_size_hint(option, len(data), expanded, self._bytes_per_line)
 
 
 class TxSignalValueDelegate(QStyledItemDelegate):
@@ -114,6 +162,33 @@ class TxSignalValueDelegate(QStyledItemDelegate):
             option.font.setFamily("Courier New")
             option.font.setStyleHint(QFont.StyleHint.Monospace)
 
+    def __init__(self, parent, expanded_cb=None, bytes_per_line: int = 12):
+        super().__init__(parent)
+        self._expanded_cb = expanded_cb
+        self._bytes_per_line = bytes_per_line
+
+    def initStyleOption(self, option, index):
+        """Apply a monospaced font for top-level hex data display."""
+        super().initStyleOption(option, index)
+        if index.parent().isValid():
+            return
+        option.font.setFamily("Courier New")
+        option.font.setStyleHint(QFont.StyleHint.Monospace)
+        data = index.data(Qt.ItemDataRole.UserRole)
+        if data is None or not isinstance(data, (bytes, bytearray)):
+            return
+        expanded = bool(self._expanded_cb(index)) if self._expanded_cb else False
+        option.text = _format_hex_bytes(bytes(data), expanded, self._bytes_per_line)
+
+    def sizeHint(self, option, index):
+        if index.parent().isValid():
+            return super().sizeHint(option, index)
+        data = index.data(Qt.ItemDataRole.UserRole)
+        if data is None or not isinstance(data, (bytes, bytearray)):
+            return super().sizeHint(option, index)
+        expanded = bool(self._expanded_cb(index)) if self._expanded_cb else False
+        return _hex_size_hint(option, len(data), expanded, self._bytes_per_line)
+
     def createEditor(self, parent, option, index):
         """Return an editable combobox for enum signals, or the default editor.
 
@@ -127,13 +202,22 @@ class TxSignalValueDelegate(QStyledItemDelegate):
             are available; the standard ``QLineEdit`` otherwise.
         """
         choices = index.data(Qt.ItemDataRole.UserRole)
-        if choices:
+        if choices and index.parent().isValid():
             combo = QComboBox(parent)
             combo.setEditable(True)
             combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
             combo.addItems(choices)
             QTimer.singleShot(0, combo.showPopup)
             return combo
+        if not index.parent().isValid() and index.column() == 7:
+            editor = QTextEdit(parent)
+            editor.setAcceptRichText(False)
+            editor.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+            editor.setTabChangesFocus(True)
+            editor.setFont(QFont("Courier New"))
+            editor.setMinimumHeight(120)
+            editor.setMinimumWidth(360)
+            return editor
         editor = super().createEditor(parent, option, index)
 
         # Top-level Data (hex) editor: defer live TX overlay updates while open.
@@ -174,6 +258,14 @@ class TxSignalValueDelegate(QStyledItemDelegate):
             if line_edit is not None:
                 # Pre-select the whole value so typing immediately replaces it.
                 QTimer.singleShot(0, line_edit.selectAll)
+        elif isinstance(editor, QTextEdit):
+            data = index.data(Qt.ItemDataRole.UserRole) or b""
+            if isinstance(data, (bytes, bytearray)):
+                text = _format_hex_bytes(bytes(data), True, self._bytes_per_line)
+            else:
+                text = ""
+            editor.setPlainText(text)
+            editor.moveCursor(QTextCursor.Start)
         else:
             super().setEditorData(editor, index)
 
@@ -195,6 +287,15 @@ class TxSignalValueDelegate(QStyledItemDelegate):
             parts = text.split(" = ", 1)
             value = parts[1] if len(parts) == 2 else text
             model.setData(index, value, Qt.ItemDataRole.EditRole)
+        elif isinstance(editor, QTextEdit):
+            raw = editor.toPlainText()
+            cleaned = "".join(ch for ch in raw if ch.strip() and ch in "0123456789abcdefABCDEF")
+            try:
+                data = bytes.fromhex(cleaned)
+            except ValueError:
+                return
+            hex_str = " ".join(f"{b:02X}" for b in data)
+            model.setData(index, hex_str, Qt.ItemDataRole.EditRole)
         else:
             super().setModelData(editor, model, index)
 
@@ -281,7 +382,7 @@ class _RxSortProxy(QSortFilterProxyModel):
 
     - **Column 1** (ID hex): compared as integers so that ``"00A" < "100"``
       rather than lexicographically.
-    - **Column 7** (Cycle Time): compared as floats so that ``"12.3"`` sorts
+    - **Column 8** (Cycle Time): compared as floats so that ``"12.3"`` sorts
       after ``"9.5"`` rather than before it.
     """
 
@@ -311,7 +412,7 @@ class _RxSortProxy(QSortFilterProxyModel):
             except (ValueError, TypeError):
                 pass
 
-        if col == 7:  # Cycle Time (displayed as "12.3" or "") — compare as float
+        if col == 8:  # Cycle Time (displayed as "12.3" or "") — compare as float
             try:
                 lv = float(left.data() or 0)
             except (ValueError, TypeError):
@@ -360,13 +461,39 @@ class _TxSortProxy(QSortFilterProxyModel):
         return super().lessThan(left, right)
 
 
-# RX column widths: Bus, ID(hex), Ext, Type, Length, Symbol, Data(hex),
-#                   Cycle Time, Count, Timing Errors
-_DEFAULT_RX_WIDTHS = [44, 80, 35, 50, 44, 120, 160, 58, 60, 88]
+class _DataExpandFilter(QObject):
+    """Intercept single-clicks on data cells to toggle expansion."""
 
-# TX column widths: Bus, ID(hex), Ext, Type, Length, Symbol, Data(hex),
+    def __init__(self, view: QTreeView, data_col: int, toggle_cb, parent=None):
+        super().__init__(parent or view)
+        self._view = view
+        self._data_col = data_col
+        self._toggle_cb = toggle_cb
+        self._ignore_release = False
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.MouseButtonDblClick:
+            index = self._view.indexAt(event.pos())
+            if index.isValid() and index.column() == self._data_col and not index.parent().isValid():
+                self._ignore_release = True
+                return False
+        if event.type() == QEvent.Type.MouseButtonRelease:
+            if self._ignore_release:
+                self._ignore_release = False
+                return False
+            index = self._view.indexAt(event.pos())
+            if index.isValid() and index.column() == self._data_col and not index.parent().isValid():
+                self._toggle_cb(index)
+        return False
+
+
+# RX column widths: Bus, ID(hex), Ext, Type, DLC, Length, Symbol, Data(hex),
+#                   Cycle Time, Count, Timing Errors
+_DEFAULT_RX_WIDTHS = [44, 80, 35, 50, 40, 52, 120, 160, 58, 60, 88]
+
+# TX column widths: Bus, ID(hex), Ext, Type, DLC, Length, Symbol, Data(hex),
 #                   Cycle Time, Count, Trigger, Creator
-_DEFAULT_TX_WIDTHS = [44, 80, 35, 50, 44, 120, 160, 58, 60, 60, 60]
+_DEFAULT_TX_WIDTHS = [44, 80, 35, 50, 40, 52, 120, 160, 58, 60, 60, 60]
 
 # Connection table: (empty/checkbox), Bus, Name, Channel, Interface, Bit Rate,
 #                   Status, Listen Only, Bus Load
@@ -439,6 +566,8 @@ class RxTxWindow(BaseDockWindow):
         self._rx_model = rx_model
         self._tx_model = tx_model
         self._connection_model = connection_model
+        self._rx_data_expanded: set[int] = set()
+        self._tx_data_expanded: set[int] = set()
         self._rx_width_ratios = self._width_ratios(_DEFAULT_RX_WIDTHS)
         self._tx_width_ratios = self._width_ratios(_DEFAULT_TX_WIDTHS)
         self._conn_width_ratios = self._width_ratios(_DEFAULT_CONN_WIDTHS)
@@ -458,12 +587,12 @@ class RxTxWindow(BaseDockWindow):
 
         self._add_rx_watch_action = QAction(_icon("watch"), "Add to Watch", self)
         self._add_rx_watch_action.triggered.connect(self._add_rx_to_watch)
-        self._add_rx_watch_action.setEnabled(False)
+        self._add_rx_watch_action.setEnabled(True)
         toolbar.addAction(self._add_rx_watch_action)
 
         self._add_rx_plot_action = QAction(_icon("plot"), "Add to Plot", self)
         self._add_rx_plot_action.triggered.connect(self._add_rx_to_plot)
-        self._add_rx_plot_action.setEnabled(False)
+        self._add_rx_plot_action.setEnabled(True)
         toolbar.addAction(self._add_rx_plot_action)
 
         self._layout.addWidget(toolbar)
@@ -489,9 +618,13 @@ class RxTxWindow(BaseDockWindow):
         self._rx_view.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._rx_view.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
         self._rx_view.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
+        self._rx_view.setTextElideMode(Qt.TextElideMode.ElideNone)
         self._rx_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._rx_view.customContextMenuRequested.connect(self._rx_context_menu)
-        self._rx_view.setItemDelegateForColumn(6, _HexFontDelegate(self._rx_view))
+        self._rx_view.setWordWrap(True)
+        self._rx_view.setItemDelegateForColumn(
+            7, _HexDataDelegate(self._rx_view, self._rx_is_data_expanded)
+        )
         self._set_default_widths(self._rx_view, _DEFAULT_RX_WIDTHS)
         rx_layout.addWidget(self._rx_view)
         self._splitter.addWidget(rx_container)
@@ -544,12 +677,12 @@ class RxTxWindow(BaseDockWindow):
 
         self._add_tx_watch_action = QAction(_icon("watch"), "Add to Watch", self)
         self._add_tx_watch_action.triggered.connect(self._add_tx_to_watch)
-        self._add_tx_watch_action.setEnabled(False)
+        self._add_tx_watch_action.setEnabled(True)
         tx_toolbar.addAction(self._add_tx_watch_action)
 
         self._add_tx_plot_action = QAction(_icon("plot"), "Add to Plot", self)
         self._add_tx_plot_action.triggered.connect(self._add_tx_to_plot)
-        self._add_tx_plot_action.setEnabled(False)
+        self._add_tx_plot_action.setEnabled(True)
         tx_toolbar.addAction(self._add_tx_plot_action)
 
         tx_layout.addWidget(tx_toolbar)
@@ -566,8 +699,12 @@ class RxTxWindow(BaseDockWindow):
         self._tx_view.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._tx_view.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
         self._tx_view.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
-        self._tx_view.setItemDelegateForColumn(5, SymbolDelegate(self._tx_view))
-        self._tx_view.setItemDelegateForColumn(6, TxSignalValueDelegate(self._tx_view))
+        self._tx_view.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self._tx_view.setWordWrap(True)
+        self._tx_view.setItemDelegateForColumn(6, SymbolDelegate(self._tx_view))
+        self._tx_view.setItemDelegateForColumn(
+            7, TxSignalValueDelegate(self._tx_view, self._tx_is_data_expanded)
+        )
         self._tx_view.setDragEnabled(True)
         self._tx_view.setAcceptDrops(True)
         self._tx_view.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
@@ -632,6 +769,20 @@ class RxTxWindow(BaseDockWindow):
         self._tx_view.selectionModel().selectionChanged.connect(self._on_tx_selected)
         self._conn_view.selectionModel().selectionChanged.connect(self._on_conn_selected)
 
+        self._rx_model.dataChanged.connect(self._on_rx_data_changed)
+        self._tx_model.dataChanged.connect(self._on_tx_data_changed)
+        self._rx_model.modelReset.connect(self._on_rx_model_reset)
+        self._tx_model.modelReset.connect(self._on_tx_model_reset)
+
+        self._rx_expand_filter = _DataExpandFilter(
+            self._rx_view, 7, self._toggle_rx_data_expanded, self
+        )
+        self._tx_expand_filter = _DataExpandFilter(
+            self._tx_view, 7, self._toggle_tx_data_expanded, self
+        )
+        self._rx_view.viewport().installEventFilter(self._rx_expand_filter)
+        self._tx_view.viewport().installEventFilter(self._tx_expand_filter)
+
         # Clear all selections on any click outside the three views
         self._click_filter = _ClickOutsideFilter(
             self, [self._rx_view, self._tx_view, self._conn_view], self)
@@ -671,6 +822,80 @@ class RxTxWindow(BaseDockWindow):
             A list containing the RX, TX, and Connections tree views.
         """
         return [self._rx_view, self._tx_view, self._conn_view]
+
+    def _rx_is_data_expanded(self, proxy_index: QModelIndex) -> bool:
+        source = self._rx_proxy.mapToSource(proxy_index)
+        item = self._rx_model.get_item_at(source)
+        return bool(item) and id(item) in self._rx_data_expanded
+
+    def _tx_is_data_expanded(self, proxy_index: QModelIndex) -> bool:
+        source = self._tx_proxy.mapToSource(proxy_index)
+        item = self._tx_model.get_item_at(source)
+        return bool(item) and id(item) in self._tx_data_expanded
+
+    def _toggle_rx_data_expanded(self, proxy_index: QModelIndex) -> None:
+        source = self._rx_proxy.mapToSource(proxy_index)
+        item = self._rx_model.get_item_at(source)
+        if item is None:
+            return
+        key = id(item)
+        if key in self._rx_data_expanded:
+            self._rx_data_expanded.remove(key)
+        else:
+            self._rx_data_expanded.add(key)
+        if proxy_index.isValid():
+            self._rx_view.setUniformRowHeights(False)
+            self._rx_view.scheduleDelayedItemsLayout()
+        self._rx_view.viewport().update()
+
+    def _toggle_tx_data_expanded(self, proxy_index: QModelIndex) -> None:
+        source = self._tx_proxy.mapToSource(proxy_index)
+        item = self._tx_model.get_item_at(source)
+        if item is None:
+            return
+        key = id(item)
+        if key in self._tx_data_expanded:
+            self._tx_data_expanded.remove(key)
+        else:
+            self._tx_data_expanded.add(key)
+        if proxy_index.isValid():
+            self._tx_view.setUniformRowHeights(False)
+            self._tx_view.scheduleDelayedItemsLayout()
+        self._tx_view.viewport().update()
+
+    def _on_rx_data_changed(self, top_left, bottom_right, _=None) -> None:
+        if top_left.parent().isValid():
+            return
+        if top_left.column() > 7 or bottom_right.column() < 7:
+            return
+        for row in range(top_left.row(), bottom_right.row() + 1):
+            src = self._rx_model.index(row, 0)
+            item = self._rx_model.get_item(src)
+            if item and id(item) in self._rx_data_expanded:
+                proxy = self._rx_proxy.mapFromSource(src)
+                if proxy.isValid():
+                    self._rx_view.setUniformRowHeights(False)
+                    self._rx_view.scheduleDelayedItemsLayout()
+
+    def _on_tx_data_changed(self, top_left, bottom_right, _=None) -> None:
+        if top_left.parent().isValid():
+            return
+        if top_left.column() > 7 or bottom_right.column() < 7:
+            return
+        for row in range(top_left.row(), bottom_right.row() + 1):
+            item = self._tx_model.get_item(row)
+            if item and id(item) in self._tx_data_expanded:
+                src = self._tx_model.index(row, 0)
+                proxy = self._tx_proxy.mapFromSource(src)
+                if proxy.isValid():
+                    self._tx_view.setUniformRowHeights(False)
+                    self._tx_view.scheduleDelayedItemsLayout()
+
+    def _on_rx_model_reset(self) -> None:
+        self._rx_data_expanded.clear()
+
+    def _on_tx_model_reset(self) -> None:
+        self._tx_data_expanded.clear()
 
     @staticmethod
     def _set_default_widths(view: QTreeView, widths: list[int]):
@@ -888,12 +1113,8 @@ class RxTxWindow(BaseDockWindow):
         return result
 
     def _sync_rx_add_actions(self):
-        """Enable RX Add-to actions only when selected messages have DB signals."""
-        has_sel = self._rx_view.selectionModel().hasSelection()
-        can_add = len(self._rx_selected_signals()) > 0
-        enabled = has_sel and can_add
-        self._add_rx_watch_action.setEnabled(enabled)
-        self._add_rx_plot_action.setEnabled(enabled)
+        """Keep RX Add-to actions enabled; no-op when selection is invalid."""
+        return
 
     def _tx_selected_signals(self) -> list:
         """Collect all unique (TxMessageItem, TxSignalItem) pairs from the TX selection.
@@ -939,12 +1160,8 @@ class RxTxWindow(BaseDockWindow):
         return result
 
     def _sync_tx_add_actions(self):
-        """Enable TX Add-to actions only when selected messages have DB signals."""
-        has_sel = self._tx_view.selectionModel().hasSelection()
-        can_add = len(self._tx_selected_signals()) > 0
-        enabled = has_sel and can_add
-        self._add_tx_watch_action.setEnabled(enabled)
-        self._add_tx_plot_action.setEnabled(enabled)
+        """Keep TX Add-to actions enabled; no-op when selection is invalid."""
+        return
 
     def _tx_selected_message_rows(self) -> list[int]:
         """Return sorted, unique source-model message row indices for the TX selection.
@@ -1042,7 +1259,8 @@ class RxTxWindow(BaseDockWindow):
                     arbitration_id=item.can_id,
                     data=bytes(item.raw_data),
                     is_extended_id=item.is_extended_id,
-                    dlc=item.length,
+                    is_fd=item.dlc > 8 or len(item.raw_data) > 8,
+                    dlc=item.dlc,
                     bus=item.bus,
                     row=row,
                 )
@@ -1052,14 +1270,13 @@ class RxTxWindow(BaseDockWindow):
     def _tx_context_menu(self, pos):
         """Show a context menu for the TX view."""
         has_sel = self._tx_view.selectionModel().hasSelection()
-        can_add = len(self._tx_selected_signals()) > 0
         self._remove_tx_action.setEnabled(has_sel)
         self._duplicate_tx_action.setEnabled(has_sel)
         self._send_once_action.setEnabled(has_sel)
         self._up_tx_action.setEnabled(has_sel)
         self._down_tx_action.setEnabled(has_sel)
-        self._add_tx_watch_action.setEnabled(has_sel and can_add)
-        self._add_tx_plot_action.setEnabled(has_sel and can_add)
+        self._add_tx_watch_action.setEnabled(True)
+        self._add_tx_plot_action.setEnabled(True)
         menu = QMenu(self)
         menu.addAction(self._add_tx_action)
         menu.addAction(self._remove_tx_action)

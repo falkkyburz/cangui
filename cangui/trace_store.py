@@ -19,14 +19,14 @@ if TYPE_CHECKING:
 
 
 _MAGIC = b"CANGUI01"
-_VERSION = 1
+_VERSION = 2
 _HEADER_STRUCT = struct.Struct("<8sI20x")
 _HEADER_SIZE = _HEADER_STRUCT.size
 
 # 96 bytes per record:
 # timestamp_ns (Q), can_id (I), bus (H), flags (B), direction (B),
-# frame_type (B), dlc (B), data (64s), padding (14x)
-_RECORD_STRUCT = struct.Struct("<QIHBBBB64s14x")
+# frame_type (B), dlc (B), length (B), data (64s), padding (13x)
+_RECORD_STRUCT = struct.Struct("<QIHBBBBB64s13x")
 _RECORD_SIZE = _RECORD_STRUCT.size
 
 _FLAG_EXTENDED_ID = 0x01
@@ -51,6 +51,7 @@ class TraceStoreRecord:
     direction: int
     frame_type: int
     dlc: int
+    length: int
     data: bytes
 
     @classmethod
@@ -77,6 +78,7 @@ class TraceStoreRecord:
             direction=direction,
             frame_type=frame_type,
             dlc=max(0, min(255, int(entry.dlc))),
+            length=max(0, min(64, int(entry.length))),
             data=payload,
         )
 
@@ -91,7 +93,7 @@ class TraceStoreRecord:
         elif self.frame_type == _FRAME_ERROR:
             frame_type = "Error"
 
-        data_len = max(0, min(64, self.dlc, len(self.data)))
+        data_len = max(0, min(64, self.length, len(self.data)))
         data = self.data[:data_len]
 
         return TraceEntry(
@@ -103,6 +105,7 @@ class TraceStoreRecord:
             direction=direction,
             frame_type=frame_type,
             dlc=self.dlc,
+            length=self.length,
             data=data,
         )
 
@@ -115,6 +118,7 @@ class TraceStoreRecord:
             self.direction,
             self.frame_type,
             self.dlc,
+            self.length,
             self.data,
         )
 
@@ -129,7 +133,8 @@ class TraceStoreRecord:
             direction=unpacked[4],
             frame_type=unpacked[5],
             dlc=unpacked[6],
-            data=unpacked[7],
+            length=unpacked[7],
+            data=unpacked[8],
         )
 
 

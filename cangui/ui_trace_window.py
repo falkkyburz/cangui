@@ -24,7 +24,7 @@ class _TraceSortProxy(QSortFilterProxyModel):
     """Sort/filter proxy for the trace table view.
 
     Applies numeric sorting for the frame number (#), timestamp, CAN-ID, and
-    DLC columns.  Text filtering via ``setFilterFixedString`` compares the
+    DLC/Length columns.  Text filtering via ``setFilterFixedString`` compares the
     filter text against every visible column.
     """
 
@@ -58,6 +58,11 @@ class _TraceSortProxy(QSortFilterProxyModel):
             except (ValueError, TypeError):
                 pass
         elif col == 6:  # DLC — integer
+            try:
+                return int(ld) < int(rd)
+            except (ValueError, TypeError):
+                pass
+        elif col == 7:  # Length — integer
             try:
                 return int(ld) < int(rd)
             except (ValueError, TypeError):
@@ -223,7 +228,7 @@ class TraceWindow(BaseDockWindow):
         header.setSectionsClickable(False)
         header.setSortIndicatorShown(False)
         # Use fixed widths instead of ResizeToContents (which measures ALL rows)
-        for col, width in enumerate([60, 80, 35, 70, 35, 45, 35, 200]):
+        for col, width in enumerate([60, 80, 35, 70, 35, 45, 35, 45, 200]):
             header.resizeSection(col, width)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_context_menu)
@@ -349,13 +354,16 @@ class TraceWindow(BaseDockWindow):
     def _on_load(self):
         """Open a file-open dialog and emit load_trace_requested with the path.
 
+        Supports loading .ctb, .trc, and .blf files. For .trc and .blf files,
+        automatically converts to .ctb format before loading.
+
         Emits:
             load_trace_requested: With the chosen file path, if the user
                 confirmed the dialog.
         """
         path, _ = QFileDialog.getOpenFileName(
             self, "Load Trace", "",
-            "Trace Files (*.trc *.blf);;TRC Files (*.trc);;BLF Files (*.blf);;All Files (*)"
+            "All Trace Files (*.ctb *.trc *.blf);;CTB Files (*.ctb);;TRC Files (*.trc);;BLF Files (*.blf);;All Files (*)"
         )
         if path:
             self.load_trace_requested.emit(path)

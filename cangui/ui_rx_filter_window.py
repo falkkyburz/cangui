@@ -16,6 +16,24 @@ from cangui.ui_tab_navigation import TabTableView
 from cangui.icons import icon as _icon
 
 
+class CheckboxDelegate(QStyledItemDelegate):
+    """Delegate for the checkbox column (Enable/Disable filter rule)."""
+
+    def editorEvent(self, event, model, option, index):
+        """Handle mouse clicks on the checkbox to toggle the enabled state."""
+        if event.type() in (
+            event.Type.MouseButtonPress,
+            event.Type.MouseButtonDblClick,
+        ):
+            state = index.data(Qt.ItemDataRole.CheckStateRole)
+            if state == Qt.CheckState.Checked:
+                new_state = Qt.CheckState.Unchecked
+            else:
+                new_state = Qt.CheckState.Checked
+            return model.setData(index, new_state, Qt.ItemDataRole.CheckStateRole)
+        return super().editorEvent(event, model, option, index)
+
+
 class ActionDelegate(QStyledItemDelegate):
     """Dropdown delegate for the Action column (Pass/Drop)."""
 
@@ -99,6 +117,7 @@ class RxFilterWindow(BaseDockWindow):
         self._view.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Interactive
         )
+        self._view.setItemDelegateForColumn(0, CheckboxDelegate(self._view))
         self._view.setItemDelegateForColumn(1, ActionDelegate(self._view))
         self._view.setDragEnabled(True)
         self._view.setAcceptDrops(True)
