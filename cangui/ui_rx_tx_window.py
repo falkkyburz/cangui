@@ -456,13 +456,15 @@ class RxTxWindow(BaseDockWindow):
         clear_action.triggered.connect(self._on_clear)
         toolbar.addAction(clear_action)
 
-        add_rx_watch_action = QAction(_icon("watch"), "Add to Watch", self)
-        add_rx_watch_action.triggered.connect(self._add_rx_to_watch)
-        toolbar.addAction(add_rx_watch_action)
+        self._add_rx_watch_action = QAction(_icon("watch"), "Add to Watch", self)
+        self._add_rx_watch_action.triggered.connect(self._add_rx_to_watch)
+        self._add_rx_watch_action.setEnabled(False)
+        toolbar.addAction(self._add_rx_watch_action)
 
-        add_rx_plot_action = QAction(_icon("plot"), "Add to Plot", self)
-        add_rx_plot_action.triggered.connect(self._add_rx_to_plot)
-        toolbar.addAction(add_rx_plot_action)
+        self._add_rx_plot_action = QAction(_icon("plot"), "Add to Plot", self)
+        self._add_rx_plot_action.triggered.connect(self._add_rx_to_plot)
+        self._add_rx_plot_action.setEnabled(False)
+        toolbar.addAction(self._add_rx_plot_action)
 
         self._layout.addWidget(toolbar)
 
@@ -542,10 +544,12 @@ class RxTxWindow(BaseDockWindow):
 
         self._add_tx_watch_action = QAction(_icon("watch"), "Add to Watch", self)
         self._add_tx_watch_action.triggered.connect(self._add_tx_to_watch)
+        self._add_tx_watch_action.setEnabled(False)
         tx_toolbar.addAction(self._add_tx_watch_action)
 
         self._add_tx_plot_action = QAction(_icon("plot"), "Add to Plot", self)
         self._add_tx_plot_action.triggered.connect(self._add_tx_to_plot)
+        self._add_tx_plot_action.setEnabled(False)
         tx_toolbar.addAction(self._add_tx_plot_action)
 
         tx_layout.addWidget(tx_toolbar)
@@ -753,6 +757,8 @@ class RxTxWindow(BaseDockWindow):
         if selected.indexes():
             self._tx_view.clearSelection()
             self._conn_view.clearSelection()
+        self._sync_rx_add_actions()
+        self._sync_tx_add_actions()
 
     def _on_tx_selected(self, selected, _):
         """Clear RX and Connections selections when a row is chosen in the TX view.
@@ -766,6 +772,8 @@ class RxTxWindow(BaseDockWindow):
         if selected.indexes():
             self._rx_view.clearSelection()
             self._conn_view.clearSelection()
+        self._sync_rx_add_actions()
+        self._sync_tx_add_actions()
 
     def _on_conn_selected(self, selected, _):
         """Clear RX and TX selections when a row is chosen in the Connections view.
@@ -780,6 +788,8 @@ class RxTxWindow(BaseDockWindow):
         if selected.indexes():
             self._rx_view.clearSelection()
             self._tx_view.clearSelection()
+        self._sync_rx_add_actions()
+        self._sync_tx_add_actions()
 
     def _on_clear(self):
         """Clear all received messages from the RX model."""
@@ -877,6 +887,14 @@ class RxTxWindow(BaseDockWindow):
 
         return result
 
+    def _sync_rx_add_actions(self):
+        """Enable RX Add-to actions only when selected messages have DB signals."""
+        has_sel = self._rx_view.selectionModel().hasSelection()
+        can_add = len(self._rx_selected_signals()) > 0
+        enabled = has_sel and can_add
+        self._add_rx_watch_action.setEnabled(enabled)
+        self._add_rx_plot_action.setEnabled(enabled)
+
     def _tx_selected_signals(self) -> list:
         """Collect all unique (TxMessageItem, TxSignalItem) pairs from the TX selection.
 
@@ -919,6 +937,14 @@ class RxTxWindow(BaseDockWindow):
                         result.append((item, sig))
 
         return result
+
+    def _sync_tx_add_actions(self):
+        """Enable TX Add-to actions only when selected messages have DB signals."""
+        has_sel = self._tx_view.selectionModel().hasSelection()
+        can_add = len(self._tx_selected_signals()) > 0
+        enabled = has_sel and can_add
+        self._add_tx_watch_action.setEnabled(enabled)
+        self._add_tx_plot_action.setEnabled(enabled)
 
     def _tx_selected_message_rows(self) -> list[int]:
         """Return sorted, unique source-model message row indices for the TX selection.
@@ -1026,13 +1052,14 @@ class RxTxWindow(BaseDockWindow):
     def _tx_context_menu(self, pos):
         """Show a context menu for the TX view."""
         has_sel = self._tx_view.selectionModel().hasSelection()
+        can_add = len(self._tx_selected_signals()) > 0
         self._remove_tx_action.setEnabled(has_sel)
         self._duplicate_tx_action.setEnabled(has_sel)
         self._send_once_action.setEnabled(has_sel)
         self._up_tx_action.setEnabled(has_sel)
         self._down_tx_action.setEnabled(has_sel)
-        self._add_tx_watch_action.setEnabled(has_sel)
-        self._add_tx_plot_action.setEnabled(has_sel)
+        self._add_tx_watch_action.setEnabled(has_sel and can_add)
+        self._add_tx_plot_action.setEnabled(has_sel and can_add)
         menu = QMenu(self)
         menu.addAction(self._add_tx_action)
         menu.addAction(self._remove_tx_action)
@@ -1074,22 +1101,14 @@ class RxTxWindow(BaseDockWindow):
         menu = QMenu(self)
 
         pairs = self._rx_selected_signals()
-        n = len(pairs)
-        if n == 0:
+        if len(pairs) == 0:
             return
-        elif n == 1:
-            item, sig = pairs[0]
-            watch_lbl = f"Add '{sig.name}' to Watch"
-            plot_lbl  = f"Add '{sig.name}' to Plot"
-        else:
-            watch_lbl = f"Add {n} signals to Watch"
-            plot_lbl  = f"Add {n} signals to Plot"
 
-        watch_action = QAction(_icon("watch"), watch_lbl, self)
+        watch_action = QAction(_icon("watch"), "Add to Watch", self)
         watch_action.triggered.connect(self._add_rx_to_watch)
         menu.addAction(watch_action)
 
-        plot_action = QAction(_icon("plot"), plot_lbl, self)
+        plot_action = QAction(_icon("plot"), "Add to Plot", self)
         plot_action.triggered.connect(self._add_rx_to_plot)
         menu.addAction(plot_action)
         menu.exec(self._rx_view.viewport().mapToGlobal(pos))
